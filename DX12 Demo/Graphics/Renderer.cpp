@@ -2,6 +2,7 @@
 #include "Renderer.h"
 #include "Graphics.h"
 #include "../Window/Window.h"
+#include "ShaderManager.h"
 
 Renderer* s_Instance = nullptr;
 
@@ -139,13 +140,8 @@ void Renderer::InitializeAssets()
 
 	// Create the pipeline state, which includes compiling and loading shaders.
 	{
-		UINT8* pVertexShaderData = nullptr;
-		UINT8* pPixelShaderData = nullptr;
-		UINT vertexShaderDataLength = 0;
-		UINT pixelShaderDataLength = 0;
-
-		ThrowIfFailed(ReadDataFromFile(L"C:\\Users\\Jacob\\source\\repos\\DX12 Demo\\x64\\Debug\\vs.cso", &pVertexShaderData, &vertexShaderDataLength));
-		ThrowIfFailed(ReadDataFromFile(L"C:\\Users\\Jacob\\source\\repos\\DX12 Demo\\x64\\Debug\\ps.cso", &pPixelShaderData, &pixelShaderDataLength));
+		ShaderManager::LoadCSO("vs", "C:\\Users\\Jacob\\source\\repos\\DX12 Demo\\x64\\Debug\\vs.cso");
+		ShaderManager::LoadCSO("ps", "C:\\Users\\Jacob\\source\\repos\\DX12 Demo\\x64\\Debug\\ps.cso");
 
 		// Define the vertex input layout.
 		D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
@@ -158,8 +154,12 @@ void Renderer::InitializeAssets()
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
 		psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
 		psoDesc.pRootSignature = m_RootSignature.Get();
-		psoDesc.VS = CD3DX12_SHADER_BYTECODE(pVertexShaderData, vertexShaderDataLength);
-		psoDesc.PS = CD3DX12_SHADER_BYTECODE(pPixelShaderData, pixelShaderDataLength);
+
+		auto vs = ShaderManager::GetShader("vs");
+		auto ps = ShaderManager::GetShader("ps");
+
+		psoDesc.VS = vs->GetBytecode();
+		psoDesc.PS = ps->GetBytecode();
 		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
 		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 		psoDesc.DepthStencilState.DepthEnable = FALSE;

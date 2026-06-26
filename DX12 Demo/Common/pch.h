@@ -26,6 +26,8 @@
 #include "D3D12MemAlloc.h"
 #include <wrl.h>
 #include <queue>
+#include <fstream>
+#include <unordered_map>
 #include "WeakWrapper.h"
 
 #define CONSOLE_LOG_ENABLED
@@ -34,6 +36,8 @@
 using namespace Microsoft::WRL;
 using std::queue;
 using std::shared_ptr;
+using std::unordered_map;
+using std::unique_ptr;
 using std::vector;
 using std::weak_ptr;
 
@@ -97,46 +101,18 @@ class Window;
 #include "sfmt.h" //String formatting helper function
 #include "Timer.h"
 
-inline HRESULT ReadDataFromFile(LPCWSTR filename, byte** data, UINT* size)
+static std::vector<u8> ReadFileBinary(const std::string& path)
 {
-    using namespace Microsoft::WRL;
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
 
-#if WINVER >= _WIN32_WINNT_WIN8
-    CREATEFILE2_EXTENDED_PARAMETERS extendedParams = {};
-    extendedParams.dwSize = sizeof(CREATEFILE2_EXTENDED_PARAMETERS);
-    extendedParams.dwFileAttributes = FILE_ATTRIBUTE_NORMAL;
-    extendedParams.dwFileFlags = FILE_FLAG_SEQUENTIAL_SCAN;
-    extendedParams.dwSecurityQosFlags = SECURITY_ANONYMOUS;
-    extendedParams.lpSecurityAttributes = nullptr;
-    extendedParams.hTemplateFile = nullptr;
+    if (!file)
+        throw std::runtime_error("Failed to open file: " + path);
 
-    Wrappers::FileHandle file(CreateFile2(filename, GENERIC_READ, FILE_SHARE_READ, OPEN_EXISTING, &extendedParams));
-#else
-    Wrappers::FileHandle file(CreateFile(filename, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN | SECURITY_SQOS_PRESENT | SECURITY_ANONYMOUS, nullptr));
-#endif
-    if (file.Get() == INVALID_HANDLE_VALUE)
-    {
-        throw std::exception();
-    }
+    size_t size = file.tellg();
+    std::vector<u8> data(size);
 
-    FILE_STANDARD_INFO fileInfo = {};
-    if (!GetFileInformationByHandleEx(file.Get(), FileStandardInfo, &fileInfo, sizeof(fileInfo)))
-    {
-        throw std::exception();
-    }
+    file.seekg(0, std::ios::beg);
+    file.read(reinterpret_cast<char*>(data.data()), size);
 
-    if (fileInfo.EndOfFile.HighPart != 0)
-    {
-        throw std::exception();
-    }
-
-    *data = reinterpret_cast<byte*>(malloc(fileInfo.EndOfFile.LowPart));
-    *size = fileInfo.EndOfFile.LowPart;
-
-    if (!ReadFile(file.Get(), *data, fileInfo.EndOfFile.LowPart, nullptr, nullptr))
-    {
-        throw std::exception();
-    }
-
-    return S_OK;
+    return data;
 }
