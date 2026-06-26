@@ -18,6 +18,8 @@ private:
 	CD3DX12_RECT m_ScissorRect;
 
 	ComPtr<ID3D12Resource> m_VertexBuffer;
+	ComPtr<ID3D12Resource> m_VertexUploadBuffer;
+
 	D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView;
 	u8 m_FrameIndex = 0;
 	u64 m_FenceValues[NUMBER_FRAMES_IN_FLIGHT] = {};

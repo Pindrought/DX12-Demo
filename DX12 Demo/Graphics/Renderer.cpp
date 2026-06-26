@@ -183,32 +183,68 @@ void Renderer::InitializeAssets()
 			{ { -0.25f, -0.25f * aspectRatio, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
 		};
 
+		//Create Vertex Buffer
 		const UINT vertexBufferSize = sizeof(triangleVertices);
 
-		// Note: using upload heaps to transfer static data like vert buffers is not 
-		// recommended. Every time the GPU needs it, the upload heap will be marshalled 
-		// over. Please read up on Default Heap usage. An upload heap is used here for 
-		// code simplicity and because there are very few verts to actually transfer.
-		auto heapProps = CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD);
-		auto resourceDesc = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
-		ThrowIfFailed(pDevice->CreateCommittedResource(&heapProps,
-													   D3D12_HEAP_FLAG_NONE,
-													   &resourceDesc,
-													   D3D12_RESOURCE_STATE_GENERIC_READ,
-													   nullptr,
-													   IID_PPV_ARGS(&m_VertexBuffer)));
+		CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
+		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
 
-		// Copy the triangle data to the vertex buffer.
-		UINT8* pVertexDataBegin;
-		CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
-		ThrowIfFailed(m_VertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
-		memcpy(pVertexDataBegin, triangleVertices, sizeof(triangleVertices));
-		m_VertexBuffer->Unmap(0, nullptr);
+		ThrowIfFailed(pDevice->CreateCommittedResource(
+			&defaultHeap,
+			D3D12_HEAP_FLAG_NONE,
+			&bufferDesc,
+			D3D12_RESOURCE_STATE_COPY_DEST,
+			nullptr,
+			IID_PPV_ARGS(&m_VertexBuffer)));
 
 		// Initialize the vertex buffer view.
 		m_VertexBufferView.BufferLocation = m_VertexBuffer->GetGPUVirtualAddress();
 		m_VertexBufferView.StrideInBytes = sizeof(Vertex);
 		m_VertexBufferView.SizeInBytes = vertexBufferSize;
+
+		//Create Vertex Upload Buffer
+		CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
+
+		ThrowIfFailed(pDevice->CreateCommittedResource(
+			&uploadHeap,
+			D3D12_HEAP_FLAG_NONE,
+			&bufferDesc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&m_VertexUploadBuffer)));
+
+		UINT8* mappedData = nullptr;
+		CD3DX12_RANGE readRange(0, 0);
+
+		ThrowIfFailed(m_VertexUploadBuffer->Map(0, &readRange, reinterpret_cast<void**>(&mappedData)));
+		memcpy(mappedData, triangleVertices, vertexBufferSize);
+		m_VertexUploadBuffer->Unmap(0, nullptr);
+
+		auto queue = m_Graphics.GetDirectCommandQueue();
+		auto commandList = queue->GetCommandList();
+		commandList->Reset();
+
+		auto commandListd3d12 = commandList->GetD3D12CommandList();
+
+		commandListd3d12->CopyBufferRegion(
+			m_VertexBuffer.Get(), 0,
+			m_VertexUploadBuffer.Get(), 0,
+			vertexBufferSize);
+
+		CD3DX12_RESOURCE_BARRIER barrier =
+			CD3DX12_RESOURCE_BARRIER::Transition(
+				m_VertexBuffer.Get(),
+				D3D12_RESOURCE_STATE_COPY_DEST,
+				D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+
+		commandListd3d12->ResourceBarrier(1, &barrier);
+
+		commandList->Close();
+
+		queue->ExecuteCommandList(commandList);
+		u64 fenceValue = queue->Signal();
+		queue->WaitForFenceValue(fenceValue);
+
 	}
 }
 
