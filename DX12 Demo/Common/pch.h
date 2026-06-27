@@ -41,6 +41,7 @@ using std::unique_ptr;
 using std::vector;
 using std::weak_ptr;
 
+using namespace DirectX;
 
 inline std::string HrToString(HRESULT hr)
 {
@@ -66,6 +67,12 @@ inline void ThrowIfFailed(HRESULT hr)
     {
         throw HrException(hr);
     }
+}
+
+template<typename Container>
+constexpr size_t ByteSize(const Container& c)
+{
+    return c.size() * sizeof(typename Container::value_type);
 }
 
 #ifdef _DEBUG

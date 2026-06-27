@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "Graphics.h"
+#include "Mesh.h"
 
 class Renderer
 {
@@ -20,8 +21,9 @@ private:
 	ComPtr<ID3D12Resource> m_VertexBuffer;
 	ComPtr<ID3D12Resource> m_VertexUploadBuffer;
 
-	D3D12_VERTEX_BUFFER_VIEW m_VertexBufferView;
 	u8 m_FrameIndex = 0;
 	u64 m_FenceValues[NUMBER_FRAMES_IN_FLIGHT] = {};
+
+	Mesh TriangleMesh;
 };
 

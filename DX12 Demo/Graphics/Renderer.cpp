@@ -83,22 +83,7 @@ void Renderer::InitializeAssets()
 	auto pDevice = Graphics::GetDevice();
 	// Create an empty root signature.
 	{
-		/*
-		/*CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
-		rootSignatureDesc.Init(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
-
-		ComPtr<ID3DBlob> signature;
-		ComPtr<ID3DBlob> error;
-		ThrowIfFailed(D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error));
-		ThrowIfFailed(pDevice->CreateRootSignature(0, 
-												   signature->GetBufferPointer(), 
-												   signature->GetBufferSize(), 
-												   IID_PPV_ARGS(&m_RootSignature)));*/
-												   
-
-
-		// Create a root signature.
-	// Allow input layout and deny unnecessary access to certain pipeline stages.
+		// Allow input layout and deny unnecessary access to certain pipeline stages.
 		D3D12_ROOT_SIGNATURE_FLAGS rootSignatureFlags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT |
 														D3D12_ROOT_SIGNATURE_FLAG_DENY_HULL_SHADER_ROOT_ACCESS |
 														D3D12_ROOT_SIGNATURE_FLAG_DENY_DOMAIN_SHADER_ROOT_ACCESS |
@@ -147,7 +132,7 @@ void Renderer::InitializeAssets()
 		D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
 		{
 			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+			{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 		};
 
 		// Describe and create the graphics pipeline state object (PSO).
@@ -172,19 +157,28 @@ void Renderer::InitializeAssets()
 		ThrowIfFailed(pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_PipelineState)));
 	}
 
-	// Create the vertex buffer.
+	//Create Mesh
 	{
-		// Define the geometry for a triangle.
 		float aspectRatio = m_ViewPort.Width / m_ViewPort.Height;
-		Vertex triangleVertices[] =
-		{
-			{ { 0.0f, 0.25f * aspectRatio, 0.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
-			{ { 0.25f, -0.25f * aspectRatio, 0.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
-			{ { -0.25f, -0.25f * aspectRatio, 0.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } }
+
+		TriangleMesh.Positions = {
+			{ 0.0f, 0.25f * aspectRatio, 0.0f },
+			{ 0.25f, -0.25f * aspectRatio, 0.0f },
+			{ -0.25f, -0.25f * aspectRatio, 0.0f }
 		};
 
+		TriangleMesh.Colors = {
+			 { 1.0f, 0.0f, 0.0f, 1.0f },
+			 { 0.0f, 1.0f, 0.0f, 1.0f },
+			 { 0.0f, 0.0f, 1.0f, 1.0f }
+		};
+	}
+
+	// Create the vertex buffer.
+	{
 		//Create Vertex Buffer
-		const UINT vertexBufferSize = sizeof(triangleVertices);
+		const UINT vertexBufferSize = ByteSize(TriangleMesh.Positions) +
+									  ByteSize(TriangleMesh.Colors);
 
 		CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
 		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
@@ -197,10 +191,16 @@ void Renderer::InitializeAssets()
 			nullptr,
 			IID_PPV_ARGS(&m_VertexBuffer)));
 
-		// Initialize the vertex buffer view.
-		m_VertexBufferView.BufferLocation = m_VertexBuffer->GetGPUVirtualAddress();
-		m_VertexBufferView.StrideInBytes = sizeof(Vertex);
-		m_VertexBufferView.SizeInBytes = vertexBufferSize;
+		// Initialize the vertex buffer views.
+		//Positions
+		TriangleMesh.PositionBufferView.BufferLocation = m_VertexBuffer->GetGPUVirtualAddress();
+		TriangleMesh.PositionBufferView.StrideInBytes = sizeof(TriangleMesh.Positions[0]);
+		TriangleMesh.PositionBufferView.SizeInBytes = ByteSize(TriangleMesh.Positions);
+		//Colors
+		int offsetToColorsData = ByteSize(TriangleMesh.Positions);
+		TriangleMesh.ColorBufferView.BufferLocation = m_VertexBuffer->GetGPUVirtualAddress() + offsetToColorsData;
+		TriangleMesh.ColorBufferView.StrideInBytes = sizeof(TriangleMesh.Colors[0]);
+		TriangleMesh.ColorBufferView.SizeInBytes = ByteSize(TriangleMesh.Colors);
 
 		//Create Vertex Upload Buffer
 		CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
@@ -217,7 +217,15 @@ void Renderer::InitializeAssets()
 		CD3DX12_RANGE readRange(0, 0);
 
 		ThrowIfFailed(m_VertexUploadBuffer->Map(0, &readRange, reinterpret_cast<void**>(&mappedData)));
-		memcpy(mappedData, triangleVertices, vertexBufferSize);
+		//Positions
+		memcpy(mappedData, 
+			   TriangleMesh.Positions.data(), 
+			   ByteSize(TriangleMesh.Positions));
+		//Colors
+		memcpy(mappedData + offsetToColorsData,
+			   TriangleMesh.Colors.data(),
+			   ByteSize(TriangleMesh.Colors));
+
 		m_VertexUploadBuffer->Unmap(0, nullptr);
 
 		auto queue = m_Graphics.GetDirectCommandQueue();
@@ -299,7 +307,11 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	cmdListd3d->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 
 	cmdListd3d->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	cmdListd3d->IASetVertexBuffers(0, 1, &m_VertexBufferView);
+	const D3D12_VERTEX_BUFFER_VIEW bufferViews[] = {
+		TriangleMesh.PositionBufferView,
+		TriangleMesh.ColorBufferView
+	};
+	cmdListd3d->IASetVertexBuffers(0, 2, bufferViews);
 	cmdListd3d->DrawInstanced(3, 1, 0, 0);
 
 	// Indicate that the back buffer will now be used to present.
