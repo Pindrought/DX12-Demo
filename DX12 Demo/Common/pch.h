@@ -43,11 +43,6 @@ using std::weak_ptr;
 
 using namespace DirectX;
 
-static u64 Align(u64 value, u64 alignment)
-{
-    return (value + alignment - 1) & ~(alignment - 1);
-}
-
 inline std::string HrToString(HRESULT hr)
 {
     char s_str[64] = {};
@@ -109,6 +104,11 @@ typedef double f64;
 class Engine;
 class Graphics;
 class Window;
+
+static u64 Align(u64 value, u64 alignment)
+{
+    return (value + alignment - 1) & ~(alignment - 1);
+}
 
 #include "sfmt.h" //String formatting helper function
 #include "Timer.h"
