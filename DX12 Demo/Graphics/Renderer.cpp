@@ -162,9 +162,9 @@ void Renderer::InitializeAssets()
 		float aspectRatio = m_ViewPort.Width / m_ViewPort.Height;
 
 		TriangleMesh.Positions = {
-			{ 0.0f, 0.25f * aspectRatio, 0.0f },
-			{ 0.25f, -0.25f * aspectRatio, 0.0f },
-			{ -0.25f, -0.25f * aspectRatio, 0.0f }
+			{ 0.0f, 1, 0.0f }, //topmid
+			{ 1, -1, 0.0f }, //bottomright
+			{ -1, -1, 0.0f } //bottomleft
 		};
 
 		TriangleMesh.Colors = {
@@ -183,13 +183,12 @@ void Renderer::InitializeAssets()
 		CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
 		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
 
-		ThrowIfFailed(pDevice->CreateCommittedResource(
-			&defaultHeap,
-			D3D12_HEAP_FLAG_NONE,
-			&bufferDesc,
-			D3D12_RESOURCE_STATE_COPY_DEST,
-			nullptr,
-			IID_PPV_ARGS(&m_VertexBuffer)));
+		ThrowIfFailed(pDevice->CreateCommittedResource(&defaultHeap,
+													   D3D12_HEAP_FLAG_NONE,
+													   &bufferDesc,
+													   D3D12_RESOURCE_STATE_COMMON,
+													   nullptr,
+													   IID_PPV_ARGS(&m_VertexBuffer)));
 
 		// Initialize the vertex buffer views.
 		//Positions
@@ -239,13 +238,25 @@ void Renderer::InitializeAssets()
 			m_VertexUploadBuffer.Get(), 0,
 			vertexBufferSize);
 
-		CD3DX12_RESOURCE_BARRIER barrier =
-			CD3DX12_RESOURCE_BARRIER::Transition(
-				m_VertexBuffer.Get(),
-				D3D12_RESOURCE_STATE_COPY_DEST,
-				D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		D3D12_BUFFER_BARRIER bufferBarrier{};
 
-		commandListd3d12->ResourceBarrier(1, &barrier);
+		bufferBarrier.SyncBefore = D3D12_BARRIER_SYNC_COPY; //Before this barrier, there was COPY work touching this memory and we need that to finish.
+		bufferBarrier.SyncAfter = D3D12_BARRIER_SYNC_DRAW; //The next GPU work that will touch this memory is draw work and it will be dependent on this to be completed.
+
+		bufferBarrier.AccessBefore = D3D12_BARRIER_ACCESS_COPY_DEST; //The previous operation accessed this memory as a copy destination.
+		bufferBarrier.AccessAfter = D3D12_BARRIER_ACCESS_VERTEX_BUFFER; //The draw will access this memory through the vertex fetch hardware.
+
+		bufferBarrier.pResource = m_VertexBuffer.Get();
+		bufferBarrier.Offset = 0;
+		bufferBarrier.Size = vertexBufferSize;
+
+		D3D12_BARRIER_GROUP group{};
+
+		group.Type = D3D12_BARRIER_TYPE_BUFFER;
+		group.NumBarriers = 1;
+		group.pBufferBarriers = &bufferBarrier;
+
+		commandListd3d12->Barrier(1, &group);
 
 		commandList->Close();
 

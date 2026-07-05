@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "Graphics.h"
+#include "VertexBufferManager.h"
 
 Graphics* s_Instance = nullptr;
 
@@ -22,9 +23,7 @@ void Graphics::Initialize(bool useWarp)
 
 	m_DirectCommandQueue = std::make_unique<CommandQueue>();
 
-	m_VertexBuffer.Initialize(1024 * 1024 * 64,
-							  D3D12_RESOURCE_FLAGS::D3D12_RESOURCE_FLAG_NONE,
-							  D3D12_RESOURCE_STATE_COMMON);
+	VertexBufferManager::Initialize();
 }
 
 Graphics* Graphics::GetInstance()

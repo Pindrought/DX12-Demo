@@ -66,7 +66,7 @@ void CommandList::ClearRenderTargetTexture(ID3D12Resource* renderTarget, const F
 {
 }
 
-ID3D12GraphicsCommandList* CommandList::GetD3D12CommandList() const
+ID3D12GraphicsCommandList7* CommandList::GetD3D12CommandList() const
 {
     return m_CommandList.Get();
 }
