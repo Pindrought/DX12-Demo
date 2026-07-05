@@ -21,6 +21,9 @@ void Graphics::Initialize(bool useWarp)
 	InitializeDevice();
 
 	m_DirectCommandQueue = std::make_unique<CommandQueue>();
+
+	m_VertexBuffer.Initialize(1024 * 1024 * 64,
+							  D3D12_RESOURCE_FLAGS::D3D12_RESOURCE_FLAG_NONE,)
 }
 
 Graphics* Graphics::GetInstance()

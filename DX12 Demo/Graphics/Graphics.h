@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "CommandQueue.h"
+#include "BufferAllocator.h"
 
 struct Vertex
 {
@@ -37,4 +38,5 @@ private:
 	bool m_TearingSupported = false;
 	bool m_DebugLayerEnabled = true;
 	bool m_Vsync = true;
+	BufferAllocator m_VertexBuffer;
 };

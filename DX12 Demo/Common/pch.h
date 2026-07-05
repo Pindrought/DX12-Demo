@@ -43,6 +43,11 @@ using std::weak_ptr;
 
 using namespace DirectX;
 
+static u64 Align(u64 value, u64 alignment)
+{
+    return (value + alignment - 1) & ~(alignment - 1);
+}
+
 inline std::string HrToString(HRESULT hr)
 {
     char s_str[64] = {};
