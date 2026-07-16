@@ -47,9 +47,9 @@ void Renderer::Render(Window* pWindow)
 
 	auto& uploadManager = UploadManager::Get();
 	uploadManager.UploadQueuedMeshes();
-
-	auto commandList = PopulateCommandList(pWindow);
+	
 	auto commandQueue = m_Graphics.GetDirectCommandQueue();
+	auto commandList = PopulateCommandList(pWindow);
 	commandQueue->RecycleInFlightCommandLists();
 
 	u64 fenceValue = commandQueue->ExecuteCommandList(commandList);
@@ -82,6 +82,10 @@ void Renderer::Render(Window* pWindow)
 		DBG_LOG(sfmt("[Renderer::Render()] FPS: [%f]", fps));
 		timer->Restart();
 		frameCount = 0;
+		if (fps < 50)
+		{
+			DebugBreak();
+		}
 	}
 }
 
@@ -223,17 +227,23 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	static Timer timer;
 	timer.Start();
 	float elapsed = timer.GetMilisecondsElapsed();
-	if (elapsed > 1000.0f)
+	/*if (elapsed > 1000.0f)
 	{
 		timer.Restart();
 		timerElapsed = !timerElapsed;
-	}
+	}*/
+
 
 	float r = 1;
-	if (timerElapsed)
+	float elapsedMod = fmod(elapsed, 2000.0f);
+	float elapsedVal = elapsedMod;
+	if (elapsedMod > 1000)
 	{
-		r = 0;
+		elapsedVal = 2000 - elapsedMod;
 	}
+	float progress = elapsedVal / 1000.0f;
+	r = progress * 1;
+
 	const float clearColor[] = { r, 0.2f, 0.4f, 1.0f };
 	cmdListd3d->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 
@@ -247,12 +257,6 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 		cmdListd3d->IASetVertexBuffers(0, 2, bufferViews);
 		cmdListd3d->DrawInstanced(3, 1, 0, 0);
 	}
-	/*const D3D12_VERTEX_BUFFER_VIEW bufferViews[] = {
-		TriangleMesh.PositionBufferView,
-		TriangleMesh.ColorBufferView
-	};
-	cmdListd3d->IASetVertexBuffers(0, 2, bufferViews);
-	cmdListd3d->DrawInstanced(3, 1, 0, 0);*/
 
 	// Indicate that the back buffer will now be used to present.
 	auto barrier_rt_to_present = CD3DX12_RESOURCE_BARRIER::Transition(renderTarget,
@@ -276,8 +280,19 @@ void Renderer::GoToNextFrame()
 	}
 	else
 	{
+		Timer t;
+		t.Start();
 		//DBG_LOG("Waiting for fence value: " + std::to_string(m_FenceValues[m_FrameIndex]));
 		commandQueue->WaitForFenceValue(m_FenceValues[m_FrameIndex]);
+		float elapsed = t.GetMilisecondsElapsed();
+		if (t.GetMilisecondsElapsed() > 1)
+		{
+			DBG_LOG(sfmt("Completed fence value: %d | elapsed: %f", m_FenceValues[m_FrameIndex], elapsed));
+		}
+		/*if (elapsed > 25)
+		{
+			DebugBreak();
+		}*/
 	}
 
 	if (m_FramesRendered > 500)

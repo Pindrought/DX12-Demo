@@ -2,7 +2,7 @@
 #include "Mesh.h"
 #include "VertexBufferManager.h"
 
-void Mesh::BuildBufferAllocations()
+void Mesh::BuildBufferAllocations() //This should onl be called once per mesh, and only after the Positions and Colors vectors have been filled with data. It allocates GPU memory for the mesh's vertex data and sets up the corresponding buffer views.
 {
     if (IsGPUDataAllocated)
     {
