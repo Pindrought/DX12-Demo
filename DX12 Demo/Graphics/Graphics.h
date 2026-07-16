@@ -11,7 +11,6 @@ struct Vertex
 
 class Graphics
 {
-private:
 public:
 	void Initialize(bool useWarp = false);
 	static Graphics* GetInstance();

@@ -39,6 +39,7 @@ BufferAllocation BufferAllocator::Allocate(u64 size,
             continue;
 
         BufferAllocation alloc;
+        alloc.AllocationId = m_NextAllocationId++;
         alloc.Offset = alignedOffset;
         alloc.Size = size;
 
@@ -91,4 +92,9 @@ void BufferAllocator::Free(const BufferAllocation& allocation)
             ++it;
         }
     }
+}
+
+ID3D12Resource* BufferAllocator::GetResource() const
+{
+    return m_Resource.Get();
 }

@@ -3,6 +3,7 @@
 
 struct BufferAllocation
 {
+    u64 AllocationId = 0;
     u64 Offset = 0;
     u64 Size = 0;
 

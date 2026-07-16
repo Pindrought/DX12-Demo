@@ -3,6 +3,8 @@
 #include "Graphics.h"
 #include "../Window/Window.h"
 #include "ShaderManager.h"
+#include "VertexBufferManager.h"
+#include "../IO/DirectoryHelper.h"
 
 Renderer* s_Instance = nullptr;
 
@@ -17,6 +19,7 @@ bool Renderer::Initialize()
 	}
 
 	m_Graphics.Initialize();
+	UploadManager::Initialize();
 
 	auto pDevice = Graphics::GetDevice();
 
@@ -41,6 +44,10 @@ void Renderer::Render(Window* pWindow)
 		timer = new Timer();
 		timer->Start();
 	}
+
+	auto& uploadManager = UploadManager::Get();
+	uploadManager.UploadQueuedMeshes();
+
 	auto commandList = PopulateCommandList(pWindow);
 	auto commandQueue = m_Graphics.GetDirectCommandQueue();
 	commandQueue->RecycleInFlightCommandLists();
@@ -125,8 +132,8 @@ void Renderer::InitializeAssets()
 
 	// Create the pipeline state, which includes compiling and loading shaders.
 	{
-		ShaderManager::LoadCSO("vs", "C:\\Users\\Jacob\\source\\repos\\DX12 Demo\\x64\\Debug\\vs.cso");
-		ShaderManager::LoadCSO("ps", "C:\\Users\\Jacob\\source\\repos\\DX12 Demo\\x64\\Debug\\ps.cso");
+		ShaderManager::LoadCSO("vs", DirectoryHelper::GetExecutableDirectory().string() + "\\vs.cso");
+		ShaderManager::LoadCSO("ps", DirectoryHelper::GetExecutableDirectory().string() + "\\ps.cso");
 
 		// Define the vertex input layout.
 		D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
@@ -159,111 +166,24 @@ void Renderer::InitializeAssets()
 
 	//Create Mesh
 	{
-		float aspectRatio = m_ViewPort.Width / m_ViewPort.Height;
-
-		TriangleMesh.Positions = {
+		Mesh* TriangleMesh = new Mesh();
+		TriangleMesh->Positions = {
 			{ 0.0f, 1, 0.0f }, //topmid
 			{ 1, -1, 0.0f }, //bottomright
 			{ -1, -1, 0.0f } //bottomleft
 		};
 
-		TriangleMesh.Colors = {
+		TriangleMesh->Colors = {
 			 { 1.0f, 0.0f, 0.0f, 1.0f },
 			 { 0.0f, 1.0f, 0.0f, 1.0f },
 			 { 0.0f, 0.0f, 1.0f, 1.0f }
 		};
-	}
 
-	// Create the vertex buffer.
-	{
-		//Create Vertex Buffer
-		const UINT vertexBufferSize = ByteSize(TriangleMesh.Positions) +
-									  ByteSize(TriangleMesh.Colors);
+		TriangleMesh->BuildBufferAllocations();
+		Meshes.push_back(TriangleMesh);
 
-		CD3DX12_HEAP_PROPERTIES defaultHeap(D3D12_HEAP_TYPE_DEFAULT);
-		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
-
-		ThrowIfFailed(pDevice->CreateCommittedResource(&defaultHeap,
-													   D3D12_HEAP_FLAG_NONE,
-													   &bufferDesc,
-													   D3D12_RESOURCE_STATE_COMMON,
-													   nullptr,
-													   IID_PPV_ARGS(&m_VertexBuffer)));
-
-		// Initialize the vertex buffer views.
-		//Positions
-		TriangleMesh.PositionBufferView.BufferLocation = m_VertexBuffer->GetGPUVirtualAddress();
-		TriangleMesh.PositionBufferView.StrideInBytes = sizeof(TriangleMesh.Positions[0]);
-		TriangleMesh.PositionBufferView.SizeInBytes = ByteSize(TriangleMesh.Positions);
-		//Colors
-		int offsetToColorsData = ByteSize(TriangleMesh.Positions);
-		TriangleMesh.ColorBufferView.BufferLocation = m_VertexBuffer->GetGPUVirtualAddress() + offsetToColorsData;
-		TriangleMesh.ColorBufferView.StrideInBytes = sizeof(TriangleMesh.Colors[0]);
-		TriangleMesh.ColorBufferView.SizeInBytes = ByteSize(TriangleMesh.Colors);
-
-		//Create Vertex Upload Buffer
-		CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
-
-		ThrowIfFailed(pDevice->CreateCommittedResource(
-			&uploadHeap,
-			D3D12_HEAP_FLAG_NONE,
-			&bufferDesc,
-			D3D12_RESOURCE_STATE_GENERIC_READ,
-			nullptr,
-			IID_PPV_ARGS(&m_VertexUploadBuffer)));
-
-		UINT8* mappedData = nullptr;
-		CD3DX12_RANGE readRange(0, 0);
-
-		ThrowIfFailed(m_VertexUploadBuffer->Map(0, &readRange, reinterpret_cast<void**>(&mappedData)));
-		//Positions
-		memcpy(mappedData, 
-			   TriangleMesh.Positions.data(), 
-			   ByteSize(TriangleMesh.Positions));
-		//Colors
-		memcpy(mappedData + offsetToColorsData,
-			   TriangleMesh.Colors.data(),
-			   ByteSize(TriangleMesh.Colors));
-
-		m_VertexUploadBuffer->Unmap(0, nullptr);
-
-		auto queue = m_Graphics.GetDirectCommandQueue();
-		auto commandList = queue->GetCommandList();
-		commandList->Reset();
-
-		auto commandListd3d12 = commandList->GetD3D12CommandList();
-
-		commandListd3d12->CopyBufferRegion(
-			m_VertexBuffer.Get(), 0,
-			m_VertexUploadBuffer.Get(), 0,
-			vertexBufferSize);
-
-		D3D12_BUFFER_BARRIER bufferBarrier{};
-
-		bufferBarrier.SyncBefore = D3D12_BARRIER_SYNC_COPY; //Before this barrier, there was COPY work touching this memory and we need that to finish.
-		bufferBarrier.SyncAfter = D3D12_BARRIER_SYNC_DRAW; //The next GPU work that will touch this memory is draw work and it will be dependent on this to be completed.
-
-		bufferBarrier.AccessBefore = D3D12_BARRIER_ACCESS_COPY_DEST; //The previous operation accessed this memory as a copy destination.
-		bufferBarrier.AccessAfter = D3D12_BARRIER_ACCESS_VERTEX_BUFFER; //The draw will access this memory through the vertex fetch hardware.
-
-		bufferBarrier.pResource = m_VertexBuffer.Get();
-		bufferBarrier.Offset = 0;
-		bufferBarrier.Size = vertexBufferSize;
-
-		D3D12_BARRIER_GROUP group{};
-
-		group.Type = D3D12_BARRIER_TYPE_BUFFER;
-		group.NumBarriers = 1;
-		group.pBufferBarriers = &bufferBarrier;
-
-		commandListd3d12->Barrier(1, &group);
-
-		commandList->Close();
-
-		queue->ExecuteCommandList(commandList);
-		u64 fenceValue = queue->Signal();
-		queue->WaitForFenceValue(fenceValue);
-
+		auto& uploadManager = UploadManager::Get();
+		uploadManager.QueueMeshForUpload(Meshes.back());
 	}
 }
 
@@ -318,12 +238,21 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	cmdListd3d->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 
 	cmdListd3d->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	const D3D12_VERTEX_BUFFER_VIEW bufferViews[] = {
+	for(auto mesh : Meshes)
+	{
+		const D3D12_VERTEX_BUFFER_VIEW bufferViews[] = {
+			mesh->PositionBufferView,
+			mesh->ColorBufferView
+		};
+		cmdListd3d->IASetVertexBuffers(0, 2, bufferViews);
+		cmdListd3d->DrawInstanced(3, 1, 0, 0);
+	}
+	/*const D3D12_VERTEX_BUFFER_VIEW bufferViews[] = {
 		TriangleMesh.PositionBufferView,
 		TriangleMesh.ColorBufferView
 	};
 	cmdListd3d->IASetVertexBuffers(0, 2, bufferViews);
-	cmdListd3d->DrawInstanced(3, 1, 0, 0);
+	cmdListd3d->DrawInstanced(3, 1, 0, 0);*/
 
 	// Indicate that the back buffer will now be used to present.
 	auto barrier_rt_to_present = CD3DX12_RESOURCE_BARRIER::Transition(renderTarget,
@@ -339,6 +268,7 @@ void Renderer::GoToNextFrame()
 {
 	m_FrameIndex++;
 	m_FrameIndex %= NUMBER_FRAMES_IN_FLIGHT;
+	m_FramesRendered += 1;
 	auto commandQueue = Graphics::GetDirectCommandQueue();
 	if (commandQueue->IsFenceComplete(m_FenceValues[m_FrameIndex]))
 	{
@@ -348,5 +278,33 @@ void Renderer::GoToNextFrame()
 	{
 		//DBG_LOG("Waiting for fence value: " + std::to_string(m_FenceValues[m_FrameIndex]));
 		commandQueue->WaitForFenceValue(m_FenceValues[m_FrameIndex]);
+	}
+
+	if (m_FramesRendered > 500)
+	{
+		static bool triangle2 = false;
+		if (triangle2 == false)
+		{
+			triangle2 = true;
+
+			Mesh* TriangleMesh = new Mesh();
+			TriangleMesh->Positions = {
+				{ -1.0f, 1, 0.0f }, //topmid
+				{ 1, -1, 0.0f }, //bottomright
+				{ -1, -1, 0.0f } //bottomleft
+			};
+
+			TriangleMesh->Colors = {
+				 { 1.0f, 1.0f, 1.0f, 1.0f },
+				 { 0.0f, 1.0f, 0.0f, 1.0f },
+				 { 1.0f, 0.0f, 1.0f, 1.0f }
+			};
+
+			TriangleMesh->BuildBufferAllocations();
+			Meshes.push_back(TriangleMesh);
+
+			auto& uploadManager = UploadManager::Get();
+			uploadManager.QueueMeshForUpload(Meshes.back());
+		}
 	}
 }

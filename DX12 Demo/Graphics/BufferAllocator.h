@@ -26,4 +26,5 @@ private:
     ComPtr<ID3D12Resource> m_Resource;
 
     std::list<FreeBlock> m_FreeBlocks;
+    u64 m_NextAllocationId = 0;
 };

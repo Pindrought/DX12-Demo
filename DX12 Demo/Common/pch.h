@@ -29,6 +29,7 @@
 #include <fstream>
 #include <unordered_map>
 #include "WeakWrapper.h"
+#include "Singleton.h"
 
 #define CONSOLE_LOG_ENABLED
 #define NUMBER_FRAMES_IN_FLIGHT 3
@@ -84,6 +85,12 @@ constexpr size_t ByteSize(const Container& c)
         #define DBG_LOG(msg) //No-op in release builds
     #endif
 #endif
+
+#define FATAL_ERROR(msg) \
+    throw std::runtime_error( \
+        std::string(msg) + \
+        "\nFile: " + __FILE__ + \
+        "\nLine: " + std::to_string(__LINE__))
 
 //Fixed-width primitive type aliases using bit-width suffixes
 typedef uint8_t u8;
