@@ -21,7 +21,8 @@ void Graphics::Initialize(bool useWarp)
 	InitializeDXGIFactory();
 	InitializeDevice();
 
-	m_DirectCommandQueue = std::make_unique<CommandQueue>();
+	m_DirectCommandQueue = std::make_unique<CommandQueue>(D3D12_COMMAND_LIST_TYPE::D3D12_COMMAND_LIST_TYPE_DIRECT);
+	m_TransferCommandQueue = std::make_unique<CommandQueue>(D3D12_COMMAND_LIST_TYPE::D3D12_COMMAND_LIST_TYPE_COPY);
 
 	VertexBufferManager::Initialize();
 }
@@ -40,6 +41,11 @@ Graphics* Graphics::GetInstance()
 CommandQueue* Graphics::GetDirectCommandQueue()
 {
 	return GetInstance()->m_DirectCommandQueue.get();
+}
+
+CommandQueue* Graphics::GetTransferCommandQueue()
+{
+	return GetInstance()->m_TransferCommandQueue.get();
 }
 
 ID3D12Device2* Graphics::GetDevice()

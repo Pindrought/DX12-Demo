@@ -193,6 +193,7 @@ void Renderer::InitializeAssets()
 
 shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 {
+	u32 maxReferencedFenceValue = 0;
 	auto pDevice = Graphics::GetDevice();
 	auto pDirectCommandQueue = Graphics::GetDirectCommandQueue();
 	auto commandList = pDirectCommandQueue->GetCommandList();
@@ -227,12 +228,6 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	static Timer timer;
 	timer.Start();
 	float elapsed = timer.GetMilisecondsElapsed();
-	/*if (elapsed > 1000.0f)
-	{
-		timer.Restart();
-		timerElapsed = !timerElapsed;
-	}*/
-
 
 	float r = 1;
 	float elapsedMod = fmod(elapsed, 2000.0f);
@@ -250,6 +245,10 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	cmdListd3d->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	for(auto mesh : Meshes)
 	{
+		if (mesh->UploadFenceValue > maxReferencedFenceValue)
+		{
+			maxReferencedFenceValue = mesh->UploadFenceValue;
+		}
 		const D3D12_VERTEX_BUFFER_VIEW bufferViews[] = {
 			mesh->PositionBufferView,
 			mesh->ColorBufferView
@@ -262,8 +261,15 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	auto barrier_rt_to_present = CD3DX12_RESOURCE_BARRIER::Transition(renderTarget,
 																	  D3D12_RESOURCE_STATE_RENDER_TARGET,
 																	  D3D12_RESOURCE_STATE_PRESENT);
+
 	cmdListd3d->ResourceBarrier(1, &barrier_rt_to_present);
 	commandList->Close();
+
+	if (maxReferencedFenceValue > 0)
+	{
+		auto transferQueue = Graphics::GetTransferCommandQueue();
+		transferQueue->WaitForFenceValue(maxReferencedFenceValue);
+	}
 
 	return commandList;
 }

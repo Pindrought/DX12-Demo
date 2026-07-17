@@ -15,6 +15,8 @@ public:
 	void Initialize(bool useWarp = false);
 	static Graphics* GetInstance();
 	static CommandQueue* GetDirectCommandQueue();
+	static CommandQueue* GetTransferCommandQueue();
+
 	static ID3D12Device2* GetDevice();
 	static IDXGIFactory4* GetDXGIFactory();
 	static D3D_ROOT_SIGNATURE_VERSION GetHighestRootSignatureVersion();
@@ -31,6 +33,8 @@ private:
 	ComPtr<ID3D12Device2> m_Device;
 	ComPtr<D3D12MA::Allocator> m_Allocator = nullptr;
 	std::unique_ptr<CommandQueue> m_DirectCommandQueue;
+	std::unique_ptr<CommandQueue> m_TransferCommandQueue;
+
 	D3D_ROOT_SIGNATURE_VERSION m_HighestRootSignatureVersion;
 	u32 m_RTVDescriptorSize = 0;
 	u32 m_CurrentBackBufferIndex = 0;
