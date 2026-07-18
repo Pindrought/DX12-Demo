@@ -118,12 +118,13 @@ void Renderer::Present(Window* pWindow, u64 fenceValue)
 	if (ms > 100.0)
 	{
 		auto fence = Graphics::GetDirectCommandQueue()->m_Fence;
-
-		DBG_LOG(sfmt("PRESENT SPIKE: %.2f ms | Submitted: %llu | Completed: %llu | BackBuffer: %u",
+		
+		DBG_LOG(sfmt("PRESENT SPIKE: %.2f ms | Submitted: %llu | Completed: %llu | BackBuffer: %u |Expected Prev Backbuffer: %u",
 					 ms,
 					 fenceValue,
 					 fence->GetCompletedValue(),
-					 pWindow->m_SwapChain->GetCurrentBackBufferIndex()));
+					 pWindow->m_SwapChain->GetCurrentBackBufferIndex(),
+					 pWindow->m_FrameIndex));
 		DebugBreak();
 	}
 }
