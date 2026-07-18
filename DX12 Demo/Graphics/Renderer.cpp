@@ -258,11 +258,31 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	// Indicate that the back buffer will be used as a render target.
 	auto renderTarget = pWindow->m_RenderTargets[pWindow->GetBackBufferIndex()].Get();
 
-	auto barrier_present_to_rt = CD3DX12_RESOURCE_BARRIER::Transition(renderTarget,
+	/*auto barrier_present_to_rt = CD3DX12_RESOURCE_BARRIER::Transition(renderTarget,
 														D3D12_RESOURCE_STATE_PRESENT,
 														D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-	cmdListd3d->ResourceBarrier(1, &barrier_present_to_rt);
+	cmdListd3d->ResourceBarrier(1, &barrier_present_to_rt);*/
+
+	{
+		D3D12_TEXTURE_BARRIER renderTargetBarrier = {};
+		renderTargetBarrier.pResource = renderTarget;
+		renderTargetBarrier.SyncBefore = D3D12_BARRIER_SYNC_NONE;
+		renderTargetBarrier.SyncAfter = D3D12_BARRIER_SYNC_RENDER_TARGET;
+		renderTargetBarrier.AccessBefore = D3D12_BARRIER_ACCESS_NO_ACCESS;
+		renderTargetBarrier.AccessAfter = D3D12_BARRIER_ACCESS_RENDER_TARGET;
+		renderTargetBarrier.LayoutBefore = D3D12_BARRIER_LAYOUT_PRESENT;
+		renderTargetBarrier.LayoutAfter = D3D12_BARRIER_LAYOUT_RENDER_TARGET;
+		renderTargetBarrier.Subresources.IndexOrFirstMipLevel = 0xFFFFFFFF;
+
+		D3D12_BARRIER_GROUP barrierGroup = {};
+		barrierGroup.Type = D3D12_BARRIER_TYPE_TEXTURE;
+		barrierGroup.NumBarriers = 1;
+		barrierGroup.pTextureBarriers = &renderTargetBarrier;
+
+		cmdListd3d->Barrier(1, &barrierGroup);
+	}
+
 
 	auto rtvHeap = pWindow->m_RTVHeap.Get();
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart(), 
@@ -322,11 +342,31 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	}
 
 	// Indicate that the back buffer will now be used to present.
-	auto barrier_rt_to_present = CD3DX12_RESOURCE_BARRIER::Transition(renderTarget,
-																	  D3D12_RESOURCE_STATE_RENDER_TARGET,
-																	  D3D12_RESOURCE_STATE_PRESENT);
+	//auto barrier_rt_to_present = CD3DX12_RESOURCE_BARRIER::Transition(renderTarget,
+	//																  D3D12_RESOURCE_STATE_RENDER_TARGET,
+	//																  D3D12_RESOURCE_STATE_PRESENT);
 
-	cmdListd3d->ResourceBarrier(1, &barrier_rt_to_present);
+	//cmdListd3d->ResourceBarrier(1, &barrier_rt_to_present);
+
+	{
+		D3D12_TEXTURE_BARRIER renderTargetBarrier = {};
+		renderTargetBarrier.pResource = renderTarget;
+		renderTargetBarrier.SyncBefore = D3D12_BARRIER_SYNC_RENDER_TARGET;
+		renderTargetBarrier.SyncAfter = D3D12_BARRIER_SYNC_NONE;
+		renderTargetBarrier.AccessBefore = D3D12_BARRIER_ACCESS_RENDER_TARGET;
+		renderTargetBarrier.AccessAfter = D3D12_BARRIER_ACCESS_NO_ACCESS;
+		renderTargetBarrier.LayoutBefore = D3D12_BARRIER_LAYOUT_RENDER_TARGET; 
+		renderTargetBarrier.LayoutAfter = D3D12_BARRIER_LAYOUT_PRESENT;
+		renderTargetBarrier.Subresources.IndexOrFirstMipLevel = 0xFFFFFFFF;
+
+		D3D12_BARRIER_GROUP barrierGroup = {};
+		barrierGroup.Type = D3D12_BARRIER_TYPE_TEXTURE;
+		barrierGroup.NumBarriers = 1;
+		barrierGroup.pTextureBarriers = &renderTargetBarrier;
+
+		cmdListd3d->Barrier(1, &barrierGroup);
+	}
+
 	commandList->Close();
 
 	return commandList;
