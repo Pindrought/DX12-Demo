@@ -23,7 +23,6 @@ public:
 	~Window();
 
 	RECT GetClientRect() const;
-	HANDLE GetSwapChainWaitableObject() const { return m_SwapChainWaitableObject; }
 	void SetEnabled(bool enabled);
 	void Hide();
 	void Show();
@@ -38,7 +37,6 @@ public:
 	WindowSettings m_Settings;
 public:
 	HWND m_HWND = NULL;
-	HANDLE m_SwapChainWaitableObject = NULL;
 	ComPtr<ID3D12DescriptorHeap> m_RTVHeap = nullptr;
 	ComPtr<ID3D12Resource> m_BackBuffer[NUMBER_FRAMES_IN_FLIGHT];
 	ComPtr<ID3D12Resource> m_RenderTargets[NUMBER_FRAMES_IN_FLIGHT];

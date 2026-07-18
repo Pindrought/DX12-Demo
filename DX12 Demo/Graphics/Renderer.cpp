@@ -72,7 +72,6 @@ void Renderer::Render(Window* pWindow)
 			commandQueue->GetD3D12CommandQueue()->Wait(transferQueue->m_Fence.Get(), commandList->m_RequiredTransferFenceValue);
 		}
 
-		WaitForSingleObject(pWindow->GetSwapChainWaitableObject(), INFINITE);
 		fenceValue = commandQueue->ExecuteCommandList(commandList);
 		m_UploadRingBuffer.EndSubmission(fenceValue);
 	}
