@@ -82,6 +82,15 @@ void Graphics::EnableDebugLayer()
 		ComPtr<ID3D12Debug> debugInterface;
 		ThrowIfFailed(D3D12GetDebugInterface(IID_PPV_ARGS(&debugInterface)));
 		debugInterface->EnableDebugLayer();
+
+		ComPtr<ID3D12Debug1> debugController1;
+
+		if (SUCCEEDED(D3D12GetDebugInterface(
+			IID_PPV_ARGS(&debugController1))))
+		{
+			debugController1->SetEnableGPUBasedValidation(TRUE);
+		}
+
 	}
 #endif
 }

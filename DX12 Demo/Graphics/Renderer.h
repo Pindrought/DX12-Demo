@@ -14,7 +14,7 @@ public:
 private:
 	void Present(Window* pWindow, u64 fenceValue);
 	void InitializeAssets();
-	shared_ptr<CommandList> PopulateCommandList(Window* pWindow);
+	shared_ptr<CommandList> PopulateCommandList(Window* pWindow, u64& requiredTransferFenceValue);
 	void GoToNextFrame();
 	Graphics m_Graphics;
 	ComPtr<ID3D12PipelineState> m_PipelineState;

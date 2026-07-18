@@ -205,9 +205,10 @@ void Window::InitializeSwapChain()
 	swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 	swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
 	swapChainDesc.SampleDesc.Count = 1;
+	swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 	if (Graphics::IsTearingSupported())
 	{
-		swapChainDesc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
+		swapChainDesc.Flags |= DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 	}
 
 	ComPtr<IDXGISwapChain1> swapChain1; //CreateSwapChainForHwnd returns a swapchain that we will later cast to IDXGISwapChain4
@@ -220,9 +221,9 @@ void Window::InitializeSwapChain()
 
 	ThrowIfFailed(swapChain1.As(&m_SwapChain)); //Cast it to IDXGISwapChain4
 
+	m_SwapChain->SetMaximumFrameLatency(NUMBER_FRAMES_IN_FLIGHT);
+	m_SwapChainWaitableObject = m_SwapChain->GetFrameLatencyWaitableObject();
 	ThrowIfFailed(pFactory->MakeWindowAssociation(m_HWND, DXGI_MWA_NO_ALT_ENTER));
-
-	m_FrameIndex = m_SwapChain->GetCurrentBackBufferIndex();
 
 	// Create descriptor heaps.
 	{
@@ -249,6 +250,11 @@ void Window::InitializeSwapChain()
 		}
 	}
 
+}
+
+u32 Window::GetBackBufferIndex()
+{
+	return m_SwapChain->GetCurrentBackBufferIndex();
 }
 
 LRESULT CALLBACK HandleMsgRedirect(HWND hwnd,

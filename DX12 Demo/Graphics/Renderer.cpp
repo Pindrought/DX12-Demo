@@ -44,6 +44,8 @@ void Renderer::Render(Window* pWindow)
 
 	static Timer* timer = nullptr;
 
+	WaitForSingleObject(pWindow->GetSwapChainWaitableObject(), INFINITE);
+
 	{
 		PROFILE_SCOPE("Renderer::Render -> Build & execute command lists");
 
@@ -61,8 +63,16 @@ void Renderer::Render(Window* pWindow)
 		m_UploadRingBuffer.BeginSubmission();
 
 		auto commandQueue = m_Graphics.GetDirectCommandQueue();
-		auto commandList = PopulateCommandList(pWindow);
+
+		u64 requiredTransferFenceValue = 0;
+		auto commandList = PopulateCommandList(pWindow, requiredTransferFenceValue);
 		commandQueue->RecycleInFlightCommandLists();
+
+		if (requiredTransferFenceValue > 0)
+		{
+			auto transferQueue = Graphics::GetTransferCommandQueue();
+			commandQueue->GetD3D12CommandQueue()->Wait(transferQueue->m_Fence.Get(), requiredTransferFenceValue);
+		}
 
 		fenceValue = commandQueue->ExecuteCommandList(commandList);
 		m_UploadRingBuffer.EndSubmission(fenceValue);
@@ -72,8 +82,6 @@ void Renderer::Render(Window* pWindow)
 
 	{
 		PROFILE_SCOPE("Renderer::Render -> GoToNextFrame");
-		pWindow->m_FrameIndex = pWindow->m_SwapChain->GetCurrentBackBufferIndex();
-
 		m_FenceValues[m_FrameIndex] = fenceValue;
 
 		GoToNextFrame();
@@ -118,13 +126,11 @@ void Renderer::Present(Window* pWindow, u64 fenceValue)
 	if (ms > 100.0)
 	{
 		auto fence = Graphics::GetDirectCommandQueue()->m_Fence;
-		
-		DBG_LOG(sfmt("PRESENT SPIKE: %.2f ms | Submitted: %llu | Completed: %llu | BackBuffer: %u |Expected Prev Backbuffer: %u",
+		DBG_LOG(sfmt("PRESENT SPIKE: %.2f ms | Submitted: %llu | Completed: %llu | BackBuffer: %u",
 					 ms,
 					 fenceValue,
 					 fence->GetCompletedValue(),
-					 pWindow->m_SwapChain->GetCurrentBackBufferIndex(),
-					 pWindow->m_FrameIndex));
+					 pWindow->m_SwapChain->GetCurrentBackBufferIndex()));
 		DebugBreak();
 	}
 }
@@ -231,10 +237,11 @@ void Renderer::InitializeAssets()
 	}
 }
 
-shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
+shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow, u64& requiredTransferFenceValue)
 {
 	PROFILE_FUNCTION();
-	u32 maxReferencedFenceValueFromTransferQueue = 0;
+
+	requiredTransferFenceValue = 0;
 	auto pDevice = Graphics::GetDevice();
 	auto pDirectCommandQueue = Graphics::GetDirectCommandQueue();
 	auto commandList = pDirectCommandQueue->GetCommandList();
@@ -251,8 +258,7 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	cmdListd3d->RSSetScissorRects(1, &m_ScissorRect);
 
 	// Indicate that the back buffer will be used as a render target.
-	auto frameIndex = pWindow->m_FrameIndex;
-	auto renderTarget = pWindow->m_RenderTargets[frameIndex].Get();
+	auto renderTarget = pWindow->m_RenderTargets[pWindow->GetBackBufferIndex()].Get();
 
 	auto barrier_present_to_rt = CD3DX12_RESOURCE_BARRIER::Transition(renderTarget,
 														D3D12_RESOURCE_STATE_PRESENT,
@@ -262,7 +268,7 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 
 	auto rtvHeap = pWindow->m_RTVHeap.Get();
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(rtvHeap->GetCPUDescriptorHandleForHeapStart(), 
-											frameIndex, 
+											pWindow->GetBackBufferIndex(),
 											pWindow->m_RTVDescriptorSize);
 	cmdListd3d->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 
@@ -305,9 +311,9 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	cmdListd3d->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	for(auto mesh : Meshes)
 	{
-		if (mesh->UploadFenceValue > maxReferencedFenceValueFromTransferQueue)
+		if (mesh->UploadFenceValue > requiredTransferFenceValue)
 		{
-			maxReferencedFenceValueFromTransferQueue = mesh->UploadFenceValue;
+			requiredTransferFenceValue = mesh->UploadFenceValue;
 		}
 		const D3D12_VERTEX_BUFFER_VIEW bufferViews[] = {
 			mesh->PositionBufferView,
@@ -325,13 +331,6 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	cmdListd3d->ResourceBarrier(1, &barrier_rt_to_present);
 	commandList->Close();
 
-	if (maxReferencedFenceValueFromTransferQueue > 0)
-	{
-		PROFILE_SCOPE("Renderer::PopulateCommandList() WaitForFenceValue");
-		auto transferQueue = Graphics::GetTransferCommandQueue();
-		transferQueue->WaitForFenceValue(maxReferencedFenceValueFromTransferQueue);
-	}
-
 	return commandList;
 }
 
@@ -343,6 +342,7 @@ void Renderer::GoToNextFrame()
 	m_FrameIndex %= NUMBER_FRAMES_IN_FLIGHT;
 	m_FramesRendered += 1;
 	auto commandQueue = Graphics::GetDirectCommandQueue();
+
 	if (commandQueue->IsFenceComplete(m_FenceValues[m_FrameIndex]))
 	{
 		//DBG_LOG("Fence ready: " + std::to_string(m_FenceValues[m_FrameIndex]));
@@ -359,31 +359,32 @@ void Renderer::GoToNextFrame()
 		}
 	}
 
-	//if (m_FramesRendered > 500) //Adding new mesh after 500 frames
-	//{
-	//	static bool triangle2 = false;
-	//	if (triangle2 == false)
-	//	{
-	//		triangle2 = true;
+	if (m_FramesRendered > 500) //Adding new mesh after 500 frames
+	{
+		static bool triangle2 = false;
+		if (triangle2 == false)
+		{
+			triangle2 = true;
 
-	//		Mesh* TriangleMesh = new Mesh();
-	//		TriangleMesh->Positions = {
-	//			{ -1.0f, 1, 0.0f }, //topmid
-	//			{ 1, -1, 0.0f }, //bottomright
-	//			{ -1, -1, 0.0f } //bottomleft
-	//		};
+			Mesh* TriangleMesh = new Mesh();
+			TriangleMesh->Positions = {
+				{ -1.0f, 1, 0.0f }, //topmid
+				{ 1, -1, 0.0f }, //bottomright
+				{ -1, -1, 0.0f } //bottomleft
+			};
 
-	//		TriangleMesh->Colors = {
-	//			 { 1.0f, 1.0f, 1.0f, 1.0f },
-	//			 { 0.0f, 1.0f, 0.0f, 1.0f },
-	//			 { 1.0f, 0.0f, 1.0f, 1.0f }
-	//		};
+			TriangleMesh->Colors = {
+				 { 1.0f, 1.0f, 1.0f, 1.0f },
+				 { 0.0f, 1.0f, 0.0f, 1.0f },
+				 { 1.0f, 0.0f, 1.0f, 1.0f }
+			};
 
-	//		TriangleMesh->BuildBufferAllocations();
-	//		Meshes.push_back(TriangleMesh);
+			TriangleMesh->BuildBufferAllocations();
+			Meshes.push_back(TriangleMesh);
 
-	//		auto& uploadManager = UploadManager::Get();
-	//		uploadManager.QueueMeshForUpload(Meshes.back());
-	//	}
-	//}
+			auto& uploadManager = UploadManager::Get();
+			uploadManager.QueueMeshForUpload(Meshes.back());
+		}
+	}
 }
+
