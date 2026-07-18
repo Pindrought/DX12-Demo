@@ -20,7 +20,7 @@ bool Renderer::Initialize()
 
 	m_Graphics.Initialize();
 	UploadManager::Initialize();
-
+	m_UploadRingBuffer.Initialize(256 * 10000);
 	auto pDevice = Graphics::GetDevice();
 
 	m_ViewPort = CD3DX12_VIEWPORT(0.0f,
@@ -84,7 +84,7 @@ void Renderer::Render(Window* pWindow)
 		frameCount = 0;
 		if (fps < 50)
 		{
-			DebugBreak();
+			//DebugBreak();
 		}
 	}
 }
@@ -105,7 +105,7 @@ void Renderer::InitializeAssets()
 		rootParameters[0].InitAsConstantBufferView(0, //Register b0
 												   0, //Space    space0
 												   D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
-												   D3D12_SHADER_VISIBILITY_VERTEX);
+												   D3D12_SHADER_VISIBILITY_PIXEL);
 
 		CD3DX12_STATIC_SAMPLER_DESC linearRepeatSampler(0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR);
 		CD3DX12_STATIC_SAMPLER_DESC anisotropicSampler(0, D3D12_FILTER_ANISOTROPIC);
@@ -168,6 +168,31 @@ void Renderer::InitializeAssets()
 		ThrowIfFailed(pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_PipelineState)));
 	}
 
+	// Create the constant buffer.
+	{
+		const UINT constantBufferSize = sizeof(PerObjectConstantBufferData) * NUMBER_FRAMES_IN_FLIGHT;    // CB size is required to be 256-byte aligned.
+
+		//Create Upload Buffer
+		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(constantBufferSize);
+
+		//Create Vertex Upload Buffer
+		CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
+
+		ThrowIfFailed(pDevice->CreateCommittedResource(
+			&uploadHeap,
+			D3D12_HEAP_FLAG_NONE,
+			&bufferDesc,
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&m_ConstantBuffer)));
+
+		// Map and initialize the constant buffer. We don't unmap this until the
+		// app closes. Keeping things mapped for the lifetime of the resource is okay.
+		CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
+		ThrowIfFailed(m_ConstantBuffer->Map(0, &readRange, reinterpret_cast<void**>(&m_PtrCBVDataBegin)));
+		memcpy(m_PtrCBVDataBegin, &m_PerObjectConstantBufferData, sizeof(m_PerObjectConstantBufferData));
+	}
+
 	//Create Mesh
 	{
 		Mesh* TriangleMesh = new Mesh();
@@ -202,8 +227,13 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	auto& cmdListd3d = commandList->m_CommandList;
 
 	cmdListd3d->SetPipelineState(m_PipelineState.Get());
+
+
+
+
 	// Set necessary state.
 	cmdListd3d->SetGraphicsRootSignature(m_RootSignature.Get());
+
 	cmdListd3d->RSSetViewports(1, &m_ViewPort);
 	cmdListd3d->RSSetScissorRects(1, &m_ScissorRect);
 
@@ -238,6 +268,21 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	}
 	float progress = elapsedVal / 1000.0f;
 	r = progress * 1;
+
+
+	D3D12_GPU_VIRTUAL_ADDRESS adress = m_ConstantBuffer->GetGPUVirtualAddress() + sizeof(m_PerObjectConstantBufferData) * frameIndex;
+	cmdListd3d->SetGraphicsRootConstantBufferView(0,
+												  adress);
+	float cBufferDataProgress = fmod(elapsed, 4000.0f);
+	if (cBufferDataProgress > 2000)
+	{
+		m_PerObjectConstantBufferData.HasColoredVertices = TRUE;
+	}
+	else
+	{
+		m_PerObjectConstantBufferData.HasColoredVertices = FALSE;
+	}
+	memcpy(m_PtrCBVDataBegin + sizeof(m_PerObjectConstantBufferData) * frameIndex, &m_PerObjectConstantBufferData, sizeof(m_PerObjectConstantBufferData));
 
 	const float clearColor[] = { r, 0.2f, 0.4f, 1.0f };
 	cmdListd3d->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);

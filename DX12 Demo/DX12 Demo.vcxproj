@@ -139,6 +139,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="Graphics\UploadRingBuffer.cpp" />
     <ClCompile Include="IO\DirectoryHelper.cpp" />
     <ClCompile Include="Common\Timer.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -168,8 +169,10 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Common\D3D12MemAlloc.h" />
+    <ClInclude Include="Graphics\ConstantBufferAllocation.h" />
     <ClInclude Include="Graphics\ConstantBufferTypes.h" />
     <ClInclude Include="Graphics\UploadManager.h" />
+    <ClInclude Include="Graphics\UploadRingBuffer.h" />
     <ClInclude Include="IO\DirectoryHelper.h" />
     <ClInclude Include="Common\Singleton.h" />
     <ClInclude Include="Common\Timer.h" />

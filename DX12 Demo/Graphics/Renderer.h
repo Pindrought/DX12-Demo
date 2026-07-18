@@ -3,6 +3,8 @@
 #include "Graphics.h"
 #include "Mesh.h"
 #include "UploadManager.h"
+#include "ConstantBufferTypes.h"
+#include "UploadRingBuffer.h"
 
 class Renderer
 {
@@ -25,6 +27,11 @@ private:
 	u64 m_FramesRendered = 0;
 
 	//Mesh TriangleMesh;
+	UploadRingBuffer m_UploadRingBuffer;
+	PerObjectConstantBufferData m_PerObjectConstantBufferData{ .HasColoredVertices = FALSE };
+	ComPtr<ID3D12Resource> m_ConstantBuffer;
+	u8* m_PtrCBVDataBegin = nullptr;
+
 
 	std::vector<Mesh*> Meshes;
 };
