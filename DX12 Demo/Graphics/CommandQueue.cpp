@@ -39,6 +39,8 @@ shared_ptr<CommandList> CommandQueue::GetCommandList()
 		commandList = std::make_shared<CommandList>(m_CommandListType);
 	}
 
+	commandList->m_RequiredTransferFenceValue = 0;
+
 	return commandList;
 }
 

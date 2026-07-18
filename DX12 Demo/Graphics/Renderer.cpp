@@ -64,14 +64,13 @@ void Renderer::Render(Window* pWindow)
 
 		auto commandQueue = m_Graphics.GetDirectCommandQueue();
 
-		u64 requiredTransferFenceValue = 0;
-		auto commandList = PopulateCommandList(pWindow, requiredTransferFenceValue);
+		auto commandList = PopulateCommandList(pWindow);
 		commandQueue->RecycleInFlightCommandLists();
 
-		if (requiredTransferFenceValue > 0)
+		if (commandList->m_RequiredTransferFenceValue > 0)
 		{
 			auto transferQueue = Graphics::GetTransferCommandQueue();
-			commandQueue->GetD3D12CommandQueue()->Wait(transferQueue->m_Fence.Get(), requiredTransferFenceValue);
+			commandQueue->GetD3D12CommandQueue()->Wait(transferQueue->m_Fence.Get(), commandList->m_RequiredTransferFenceValue);
 		}
 
 		fenceValue = commandQueue->ExecuteCommandList(commandList);
@@ -237,11 +236,10 @@ void Renderer::InitializeAssets()
 	}
 }
 
-shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow, u64& requiredTransferFenceValue)
+shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 {
 	PROFILE_FUNCTION();
 
-	requiredTransferFenceValue = 0;
 	auto pDevice = Graphics::GetDevice();
 	auto pDirectCommandQueue = Graphics::GetDirectCommandQueue();
 	auto commandList = pDirectCommandQueue->GetCommandList();
@@ -311,9 +309,9 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow, u64& requ
 	cmdListd3d->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	for(auto mesh : Meshes)
 	{
-		if (mesh->UploadFenceValue > requiredTransferFenceValue)
+		if (mesh->UploadFenceValue > commandList->m_RequiredTransferFenceValue)
 		{
-			requiredTransferFenceValue = mesh->UploadFenceValue;
+			commandList->m_RequiredTransferFenceValue = mesh->UploadFenceValue;
 		}
 		const D3D12_VERTEX_BUFFER_VIEW bufferViews[] = {
 			mesh->PositionBufferView,
