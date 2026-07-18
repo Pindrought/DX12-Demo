@@ -44,7 +44,6 @@ void Renderer::Render(Window* pWindow)
 
 	static Timer* timer = nullptr;
 
-	WaitForSingleObject(pWindow->GetSwapChainWaitableObject(), INFINITE);
 
 	{
 		PROFILE_SCOPE("Renderer::Render -> Build & execute command lists");
@@ -73,6 +72,7 @@ void Renderer::Render(Window* pWindow)
 			commandQueue->GetD3D12CommandQueue()->Wait(transferQueue->m_Fence.Get(), commandList->m_RequiredTransferFenceValue);
 		}
 
+		WaitForSingleObject(pWindow->GetSwapChainWaitableObject(), INFINITE);
 		fenceValue = commandQueue->ExecuteCommandList(commandList);
 		m_UploadRingBuffer.EndSubmission(fenceValue);
 	}
