@@ -5,6 +5,7 @@
 #include "ShaderManager.h"
 #include "VertexBufferManager.h"
 #include "../IO/DirectoryHelper.h"
+#include "Profiler.h"
 
 Renderer* s_Instance = nullptr;
 
@@ -37,22 +38,64 @@ bool Renderer::Initialize()
 
 void Renderer::Render(Window* pWindow)
 {
+	PROFILE_FUNCTION();
+	u64 fenceValue = 0;
 	static int frameCount = 0;
+
 	static Timer* timer = nullptr;
-	if (timer == nullptr)
+
 	{
-		timer = new Timer();
-		timer->Start();
+		PROFILE_SCOPE("Renderer::Render -> Build & execute command lists");
+
+		if (timer == nullptr)
+		{
+			timer = new Timer();
+			timer->Start();
+		}
+
+		auto& uploadManager = UploadManager::Get();
+		uploadManager.UploadQueuedMeshes();
+
+		u64 completedFenceValue = Graphics::GetDirectCommandQueue()->m_Fence->GetCompletedValue();
+		m_UploadRingBuffer.ReclaimCompletedSubmissions(completedFenceValue);
+		m_UploadRingBuffer.BeginSubmission();
+
+		auto commandQueue = m_Graphics.GetDirectCommandQueue();
+		auto commandList = PopulateCommandList(pWindow);
+		commandQueue->RecycleInFlightCommandLists();
+
+		fenceValue = commandQueue->ExecuteCommandList(commandList);
+		m_UploadRingBuffer.EndSubmission(fenceValue);
 	}
-
-	auto& uploadManager = UploadManager::Get();
-	uploadManager.UploadQueuedMeshes();
 	
-	auto commandQueue = m_Graphics.GetDirectCommandQueue();
-	auto commandList = PopulateCommandList(pWindow);
-	commandQueue->RecycleInFlightCommandLists();
+	Present(pWindow, fenceValue);
 
-	u64 fenceValue = commandQueue->ExecuteCommandList(commandList);
+	{
+		PROFILE_SCOPE("Renderer::Render -> GoToNextFrame");
+		pWindow->m_FrameIndex = pWindow->m_SwapChain->GetCurrentBackBufferIndex();
+
+		m_FenceValues[m_FrameIndex] = fenceValue;
+
+		GoToNextFrame();
+
+		frameCount++;
+		if (timer->GetMilisecondsElapsed() > 1000.0f)
+		{
+			float fps = frameCount / (timer->GetMilisecondsElapsed() / 1000.0f);
+			DBG_LOG(sfmt("[Renderer::Render()] FPS: [%f]", fps));
+			timer->Restart();
+			frameCount = 0;
+		}
+	}
+}
+
+void Renderer::Present(Window* pWindow, u64 fenceValue)
+{
+	PROFILE_FUNCTION();
+	auto start = std::chrono::high_resolution_clock::now();
+
+	HRESULT hr;
+
 	if (Graphics::IsVSyncOn())
 	{
 		ThrowIfFailed(pWindow->m_SwapChain->Present(1, 0));
@@ -68,24 +111,20 @@ void Renderer::Render(Window* pWindow)
 			ThrowIfFailed(pWindow->m_SwapChain->Present(0, 0));
 		}
 	}
-	
-	pWindow->m_FrameIndex = pWindow->m_SwapChain->GetCurrentBackBufferIndex();
 
-	m_FenceValues[m_FrameIndex] = fenceValue;
-	
-	GoToNextFrame();
+	auto end = std::chrono::high_resolution_clock::now();
+	double ms = std::chrono::duration<double, std::milli>(end - start).count();
 
-	frameCount++;
-	if (timer->GetMilisecondsElapsed() > 1000.0f)
+	if (ms > 100.0)
 	{
-		float fps = frameCount / (timer->GetMilisecondsElapsed() / 1000.0f);
-		DBG_LOG(sfmt("[Renderer::Render()] FPS: [%f]", fps));
-		timer->Restart();
-		frameCount = 0;
-		if (fps < 50)
-		{
-			//DebugBreak();
-		}
+		auto fence = Graphics::GetDirectCommandQueue()->m_Fence;
+
+		DBG_LOG(sfmt("PRESENT SPIKE: %.2f ms | Submitted: %llu | Completed: %llu | BackBuffer: %u",
+					 ms,
+					 fenceValue,
+					 fence->GetCompletedValue(),
+					 pWindow->m_SwapChain->GetCurrentBackBufferIndex()));
+		DebugBreak();
 	}
 }
 
@@ -168,31 +207,6 @@ void Renderer::InitializeAssets()
 		ThrowIfFailed(pDevice->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_PipelineState)));
 	}
 
-	// Create the constant buffer.
-	{
-		const UINT constantBufferSize = sizeof(PerObjectConstantBufferData) * NUMBER_FRAMES_IN_FLIGHT;    // CB size is required to be 256-byte aligned.
-
-		//Create Upload Buffer
-		CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(constantBufferSize);
-
-		//Create Vertex Upload Buffer
-		CD3DX12_HEAP_PROPERTIES uploadHeap(D3D12_HEAP_TYPE_UPLOAD);
-
-		ThrowIfFailed(pDevice->CreateCommittedResource(
-			&uploadHeap,
-			D3D12_HEAP_FLAG_NONE,
-			&bufferDesc,
-			D3D12_RESOURCE_STATE_GENERIC_READ,
-			nullptr,
-			IID_PPV_ARGS(&m_ConstantBuffer)));
-
-		// Map and initialize the constant buffer. We don't unmap this until the
-		// app closes. Keeping things mapped for the lifetime of the resource is okay.
-		CD3DX12_RANGE readRange(0, 0);        // We do not intend to read from this resource on the CPU.
-		ThrowIfFailed(m_ConstantBuffer->Map(0, &readRange, reinterpret_cast<void**>(&m_PtrCBVDataBegin)));
-		memcpy(m_PtrCBVDataBegin, &m_PerObjectConstantBufferData, sizeof(m_PerObjectConstantBufferData));
-	}
-
 	//Create Mesh
 	{
 		Mesh* TriangleMesh = new Mesh();
@@ -218,7 +232,8 @@ void Renderer::InitializeAssets()
 
 shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 {
-	u32 maxReferencedFenceValue = 0;
+	PROFILE_FUNCTION();
+	u32 maxReferencedFenceValueFromTransferQueue = 0;
 	auto pDevice = Graphics::GetDevice();
 	auto pDirectCommandQueue = Graphics::GetDirectCommandQueue();
 	auto commandList = pDirectCommandQueue->GetCommandList();
@@ -227,9 +242,6 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	auto& cmdListd3d = commandList->m_CommandList;
 
 	cmdListd3d->SetPipelineState(m_PipelineState.Get());
-
-
-
 
 	// Set necessary state.
 	cmdListd3d->SetGraphicsRootSignature(m_RootSignature.Get());
@@ -259,20 +271,7 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	timer.Start();
 	float elapsed = timer.GetMilisecondsElapsed();
 
-	float r = 1;
-	float elapsedMod = fmod(elapsed, 2000.0f);
-	float elapsedVal = elapsedMod;
-	if (elapsedMod > 1000)
-	{
-		elapsedVal = 2000 - elapsedMod;
-	}
-	float progress = elapsedVal / 1000.0f;
-	r = progress * 1;
-
-
-	D3D12_GPU_VIRTUAL_ADDRESS adress = m_ConstantBuffer->GetGPUVirtualAddress() + sizeof(m_PerObjectConstantBufferData) * frameIndex;
-	cmdListd3d->SetGraphicsRootConstantBufferView(0,
-												  adress);
+	//Code to flip cbuffer from colored to non-colored every 2 seconds.
 	float cBufferDataProgress = fmod(elapsed, 4000.0f);
 	if (cBufferDataProgress > 2000)
 	{
@@ -282,17 +281,32 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	{
 		m_PerObjectConstantBufferData.HasColoredVertices = FALSE;
 	}
-	memcpy(m_PtrCBVDataBegin + sizeof(m_PerObjectConstantBufferData) * frameIndex, &m_PerObjectConstantBufferData, sizeof(m_PerObjectConstantBufferData));
 
+	ConstantBufferAllocation cBufferAlloc = m_UploadRingBuffer.Allocate(sizeof(m_PerObjectConstantBufferData));
+	cmdListd3d->SetGraphicsRootConstantBufferView(0,
+												  cBufferAlloc.GPUAddress);
+	memcpy(cBufferAlloc.CPUAddress, &m_PerObjectConstantBufferData, sizeof(m_PerObjectConstantBufferData));
+
+	//Code to make background color pulse every second
+	float r = 1;
+	float elapsedMod = fmod(elapsed, 2000.0f);
+	float elapsedVal = elapsedMod;
+	if (elapsedMod > 1000)
+	{
+		elapsedVal = 2000 - elapsedMod;
+	}
+	float progress = elapsedVal / 1000.0f;
+	r = progress * 1;
 	const float clearColor[] = { r, 0.2f, 0.4f, 1.0f };
 	cmdListd3d->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 
+	//Draw meshes
 	cmdListd3d->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	for(auto mesh : Meshes)
 	{
-		if (mesh->UploadFenceValue > maxReferencedFenceValue)
+		if (mesh->UploadFenceValue > maxReferencedFenceValueFromTransferQueue)
 		{
-			maxReferencedFenceValue = mesh->UploadFenceValue;
+			maxReferencedFenceValueFromTransferQueue = mesh->UploadFenceValue;
 		}
 		const D3D12_VERTEX_BUFFER_VIEW bufferViews[] = {
 			mesh->PositionBufferView,
@@ -310,10 +324,11 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 	cmdListd3d->ResourceBarrier(1, &barrier_rt_to_present);
 	commandList->Close();
 
-	if (maxReferencedFenceValue > 0)
+	if (maxReferencedFenceValueFromTransferQueue > 0)
 	{
+		PROFILE_SCOPE("Renderer::PopulateCommandList() WaitForFenceValue");
 		auto transferQueue = Graphics::GetTransferCommandQueue();
-		transferQueue->WaitForFenceValue(maxReferencedFenceValue);
+		transferQueue->WaitForFenceValue(maxReferencedFenceValueFromTransferQueue);
 	}
 
 	return commandList;
@@ -321,6 +336,8 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 
 void Renderer::GoToNextFrame()
 {
+	PROFILE_FUNCTION();
+
 	m_FrameIndex++;
 	m_FrameIndex %= NUMBER_FRAMES_IN_FLIGHT;
 	m_FramesRendered += 1;
@@ -333,44 +350,39 @@ void Renderer::GoToNextFrame()
 	{
 		Timer t;
 		t.Start();
-		//DBG_LOG("Waiting for fence value: " + std::to_string(m_FenceValues[m_FrameIndex]));
 		commandQueue->WaitForFenceValue(m_FenceValues[m_FrameIndex]);
 		float elapsed = t.GetMilisecondsElapsed();
-		if (t.GetMilisecondsElapsed() > 1)
+		if (t.GetMilisecondsElapsed() > 1) //If we wait over 1 sec on a fence, log it as this should not happen.
 		{
 			DBG_LOG(sfmt("Completed fence value: %d | elapsed: %f", m_FenceValues[m_FrameIndex], elapsed));
 		}
-		/*if (elapsed > 25)
-		{
-			DebugBreak();
-		}*/
 	}
 
-	if (m_FramesRendered > 500)
-	{
-		static bool triangle2 = false;
-		if (triangle2 == false)
-		{
-			triangle2 = true;
+	//if (m_FramesRendered > 500) //Adding new mesh after 500 frames
+	//{
+	//	static bool triangle2 = false;
+	//	if (triangle2 == false)
+	//	{
+	//		triangle2 = true;
 
-			Mesh* TriangleMesh = new Mesh();
-			TriangleMesh->Positions = {
-				{ -1.0f, 1, 0.0f }, //topmid
-				{ 1, -1, 0.0f }, //bottomright
-				{ -1, -1, 0.0f } //bottomleft
-			};
+	//		Mesh* TriangleMesh = new Mesh();
+	//		TriangleMesh->Positions = {
+	//			{ -1.0f, 1, 0.0f }, //topmid
+	//			{ 1, -1, 0.0f }, //bottomright
+	//			{ -1, -1, 0.0f } //bottomleft
+	//		};
 
-			TriangleMesh->Colors = {
-				 { 1.0f, 1.0f, 1.0f, 1.0f },
-				 { 0.0f, 1.0f, 0.0f, 1.0f },
-				 { 1.0f, 0.0f, 1.0f, 1.0f }
-			};
+	//		TriangleMesh->Colors = {
+	//			 { 1.0f, 1.0f, 1.0f, 1.0f },
+	//			 { 0.0f, 1.0f, 0.0f, 1.0f },
+	//			 { 1.0f, 0.0f, 1.0f, 1.0f }
+	//		};
 
-			TriangleMesh->BuildBufferAllocations();
-			Meshes.push_back(TriangleMesh);
+	//		TriangleMesh->BuildBufferAllocations();
+	//		Meshes.push_back(TriangleMesh);
 
-			auto& uploadManager = UploadManager::Get();
-			uploadManager.QueueMeshForUpload(Meshes.back());
-		}
-	}
+	//		auto& uploadManager = UploadManager::Get();
+	//		uploadManager.QueueMeshForUpload(Meshes.back());
+	//	}
+	//}
 }

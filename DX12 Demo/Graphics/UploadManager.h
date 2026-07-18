@@ -2,6 +2,7 @@
 #include "pch.h"
 #include "Mesh.h"
 #include "VertexBufferManager.h"
+#include "Profiler.h"
 
 class UploadManager : public Singleton<UploadManager>
 {
@@ -13,6 +14,8 @@ public:
 	}
 	void UploadQueuedMeshes()
 	{
+		PROFILE_FUNCTION();
+
 		if (MeshesToUpload.size() == 0)
 			return;
 

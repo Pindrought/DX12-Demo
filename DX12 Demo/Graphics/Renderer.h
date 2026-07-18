@@ -12,6 +12,7 @@ public:
 	bool Initialize();
 	void Render(Window* pWindow);
 private:
+	void Present(Window* pWindow, u64 fenceValue);
 	void InitializeAssets();
 	shared_ptr<CommandList> PopulateCommandList(Window* pWindow);
 	void GoToNextFrame();
@@ -21,7 +22,6 @@ private:
 	CD3DX12_VIEWPORT m_ViewPort;
 	CD3DX12_RECT m_ScissorRect;
 
-
 	u8 m_FrameIndex = 0;
 	u64 m_FenceValues[NUMBER_FRAMES_IN_FLIGHT] = {};
 	u64 m_FramesRendered = 0;
@@ -29,9 +29,6 @@ private:
 	//Mesh TriangleMesh;
 	UploadRingBuffer m_UploadRingBuffer;
 	PerObjectConstantBufferData m_PerObjectConstantBufferData{ .HasColoredVertices = FALSE };
-	ComPtr<ID3D12Resource> m_ConstantBuffer;
-	u8* m_PtrCBVDataBegin = nullptr;
-
 
 	std::vector<Mesh*> Meshes;
 };

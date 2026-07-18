@@ -26,6 +26,7 @@
 #include "D3D12MemAlloc.h"
 #include <wrl.h>
 #include <queue>
+#include <deque>
 #include <fstream>
 #include <unordered_map>
 #include "WeakWrapper.h"
@@ -36,6 +37,7 @@
 
 using namespace Microsoft::WRL;
 using std::queue;
+using std::deque;
 using std::shared_ptr;
 using std::unordered_map;
 using std::unique_ptr;

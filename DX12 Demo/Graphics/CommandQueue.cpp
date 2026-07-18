@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "CommandQueue.h"
 #include "Graphics.h"
+#include "Profiler.h"
 
 CommandQueue::CommandQueue(D3D12_COMMAND_LIST_TYPE type)
 	: m_CommandListType(type)
@@ -48,6 +49,7 @@ u64 CommandQueue::ExecuteCommandList(shared_ptr<CommandList> commandList)
 
 u64 CommandQueue::ExecuteCommandLists(const vector<shared_ptr<CommandList>>& commandLists)
 {
+	PROFILE_FUNCTION();
 	// Command lists that need to be executed.
 	std::vector<ID3D12CommandList*> d3d12CommandLists;
 	d3d12CommandLists.reserve(commandLists.size());
@@ -103,6 +105,8 @@ void CommandQueue::WaitForFenceValue(u64 fenceValue)
 
 void CommandQueue::RecycleInFlightCommandLists()
 {
+	PROFILE_FUNCTION();
+
 	while (m_InFlightCommandLists.empty() == false)
 	{
 		auto entry = m_InFlightCommandLists.front();

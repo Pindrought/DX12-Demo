@@ -22,7 +22,6 @@ int WINAPI wWinMain(_In_     HINSTANCE hInstance,
         while (engine.IsRunning())
         {
             engine.ProcessWindowsMessages();
-            
             engine.OnUpdate();
             engine.OnRender();
         }

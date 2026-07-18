@@ -1,6 +1,7 @@
 #include "pch.h"
 #include "Engine.h"
 #include "../Window/Window.h"
+#include "Graphics/Profiler.h"
 
 bool Engine::Initialize()
 {
@@ -33,8 +34,14 @@ void Engine::OnUpdate()
 void Engine::OnRender()
 {
 	//OnPreRender
-
 	m_Renderer.Render(&m_Window);
+
+	if (GetAsyncKeyState(VK_F1))
+	{
+		while (GetAsyncKeyState(VK_F1)) { Sleep(1); } //Wait for key release
+		Profiler::Print();
+		DebugBreak();
+	}
 }
 
 void Engine::ProcessWindowsMessages()

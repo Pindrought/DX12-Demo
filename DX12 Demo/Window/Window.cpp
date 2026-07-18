@@ -197,7 +197,6 @@ void Window::InitializeSwapChain()
 	auto pFactory = Graphics::GetDXGIFactory();
 	auto pDevice = Graphics::GetDevice();
 
-
 	DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
 	swapChainDesc.BufferCount = NUMBER_FRAMES_IN_FLIGHT;
 	swapChainDesc.Width = m_Settings.Width;
