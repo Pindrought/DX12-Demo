@@ -44,7 +44,6 @@ void Renderer::Render(Window* pWindow)
 
 	static Timer* timer = nullptr;
 
-
 	{
 		PROFILE_SCOPE("Renderer::Render -> Build & execute command lists");
 
@@ -55,7 +54,9 @@ void Renderer::Render(Window* pWindow)
 		}
 
 		auto& uploadManager = UploadManager::Get();
+		uploadManager.ResetUploadBufferOffset();
 		uploadManager.UploadQueuedMeshes();
+		uploadManager.UploadQueuedTextures();
 
 		u64 completedFenceValue = Graphics::GetDirectCommandQueue()->m_Fence->GetCompletedValue();
 		m_UploadRingBuffer.ReclaimCompletedSubmissions(completedFenceValue);
@@ -72,11 +73,11 @@ void Renderer::Render(Window* pWindow)
 			commandQueue->GetD3D12CommandQueue()->Wait(transferQueue->m_Fence.Get(), commandList->m_RequiredTransferFenceValue);
 		}
 
-		WaitForSingleObject(pWindow->GetSwapChainWaitableObject(), INFINITE);
 		fenceValue = commandQueue->ExecuteCommandList(commandList);
 		m_UploadRingBuffer.EndSubmission(fenceValue);
 	}
-	
+
+	WaitForSingleObject(pWindow->GetSwapChainWaitableObject(), INFINITE);
 	Present(pWindow, fenceValue);
 
 	{
@@ -134,9 +135,52 @@ void Renderer::Present(Window* pWindow, u64 fenceValue)
 	}
 }
 
+vector<u8> GenerateCheckerTexture(u32 width, u32 height)
+{
+	const u32 bytesPerPixel = 4; // RGBA
+	int squareSize = 8; // Size of each checker square in pixels
+	vector<u8> textureData(width * height * bytesPerPixel);
+	for (u32 y = 0; y < height; ++y)
+	{
+		for (u32 x = 0; x < width; ++x)
+		{
+			bool isEvenColumn = ((x/squareSize) % 2) == 0;
+			bool isEvenRow = ((y / squareSize) % 2) == 0;
+
+			u32 index = (y * width + x) * bytesPerPixel;
+			if (isEvenColumn == isEvenRow)
+			{
+				textureData[index + 0] = 255; // R
+				textureData[index + 1] = 255; // G
+				textureData[index + 2] = 255; // B
+				textureData[index + 3] = 255; // A
+			}
+			else
+			{
+				textureData[index + 0] = 0;   // R
+				textureData[index + 1] = 0;   // G
+				textureData[index + 2] = 0;   // B
+				textureData[index + 3] = 255; // A
+			}
+		}
+	}
+	return textureData;
+}
+
 void Renderer::InitializeAssets()
 {
 	auto pDevice = Graphics::GetDevice();
+
+	// Create descriptor heaps.
+	{
+		// Describe and create a shader resource view (SRV) heap for the texture.
+		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
+		srvHeapDesc.NumDescriptors = 1;
+		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		ThrowIfFailed(pDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SRVHeap)));
+	}
+
 	// Create an empty root signature.
 	{
 		// Allow input layout and deny unnecessary access to certain pipeline stages.
@@ -146,11 +190,16 @@ void Renderer::InitializeAssets()
 														D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
 
-		CD3DX12_ROOT_PARAMETER1 rootParameters[1];
+		CD3DX12_ROOT_PARAMETER1 rootParameters[2];
 		rootParameters[0].InitAsConstantBufferView(0, //Register b0
 												   0, //Space    space0
 												   D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
 												   D3D12_SHADER_VISIBILITY_PIXEL);
+
+		//For texture
+		// Texture descriptor table at register t0
+		CD3DX12_DESCRIPTOR_RANGE1 textureRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // 1 SRV at t0
+		rootParameters[1].InitAsDescriptorTable(1, &textureRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
 		CD3DX12_STATIC_SAMPLER_DESC linearRepeatSampler(0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR);
 		CD3DX12_STATIC_SAMPLER_DESC anisotropicSampler(0, D3D12_FILTER_ANISOTROPIC);
@@ -188,7 +237,8 @@ void Renderer::InitializeAssets()
 		D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
 		{
 			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
-			{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+			{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 2, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
 		};
 
 		// Describe and create the graphics pipeline state object (PSO).
@@ -228,11 +278,36 @@ void Renderer::InitializeAssets()
 			 { 0.0f, 0.0f, 1.0f, 1.0f }
 		};
 
+		TriangleMesh->TexCoords = {
+			 { 0.5f, 0.0f },
+			 { 1.0f, 1.0f },
+			 { 0.0f, 1.0f }
+		};
+
 		TriangleMesh->BuildBufferAllocations();
 		Meshes.push_back(TriangleMesh);
 
 		auto& uploadManager = UploadManager::Get();
 		uploadManager.QueueMeshForUpload(Meshes.back());
+	}
+
+	//Create Texture
+	{
+		vector<u8> checkerData = GenerateCheckerTexture(256, 256);
+		CheckerTexture.Initialize(checkerData, 256, 256, DXGI_FORMAT_R8G8B8A8_UNORM);
+
+		auto& uploadManager = UploadManager::Get();
+		uploadManager.QueueTextureForUpload(&CheckerTexture);
+
+		D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.Format = CheckerTexture.Format;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = 1;
+		pDevice->CreateShaderResourceView(CheckerTexture.Resource.Get(), 
+										  &srvDesc, 
+										  m_SRVHeap->GetCPUDescriptorHandleForHeapStart());
+
 	}
 }
 
@@ -251,6 +326,10 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 
 	// Set necessary state.
 	cmdListd3d->SetGraphicsRootSignature(m_RootSignature.Get());
+
+	ID3D12DescriptorHeap* ppHeaps[] = { m_SRVHeap.Get() };
+	cmdListd3d->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
+	cmdListd3d->SetGraphicsRootDescriptorTable(1, m_SRVHeap->GetGPUDescriptorHandleForHeapStart());
 
 	cmdListd3d->RSSetViewports(1, &m_ViewPort);
 	cmdListd3d->RSSetScissorRects(1, &m_ScissorRect);
@@ -307,6 +386,19 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 		m_PerObjectConstantBufferData.HasColoredVertices = FALSE;
 	}
 
+	if (GetAsyncKeyState(VK_F2))
+	{
+		while (GetAsyncKeyState(VK_F2)) { Sleep(1); }
+		if (m_PerObjectConstantBufferData.HasTexCoords == TRUE)
+		{
+			m_PerObjectConstantBufferData.HasTexCoords = FALSE;
+		}
+		else
+		{
+			m_PerObjectConstantBufferData.HasTexCoords = TRUE;
+		}
+	}
+
 	ConstantBufferAllocation cBufferAlloc = m_UploadRingBuffer.Allocate(sizeof(m_PerObjectConstantBufferData));
 	cmdListd3d->SetGraphicsRootConstantBufferView(0,
 												  cBufferAlloc.GPUAddress);
@@ -335,9 +427,15 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 		}
 		const D3D12_VERTEX_BUFFER_VIEW bufferViews[] = {
 			mesh->PositionBufferView,
-			mesh->ColorBufferView
+			mesh->ColorBufferView,
+			mesh->TexCoordBufferView
 		};
-		cmdListd3d->IASetVertexBuffers(0, 2, bufferViews);
+		cmdListd3d->IASetVertexBuffers(0, 3, bufferViews);
+
+		if (m_PerObjectConstantBufferData.HasTexCoords == TRUE)
+		{
+		}
+
 		cmdListd3d->DrawInstanced(3, 1, 0, 0);
 	}
 
@@ -397,32 +495,32 @@ void Renderer::GoToNextFrame()
 		}
 	}
 
-	if (m_FramesRendered > 500) //Adding new mesh after 500 frames
-	{
-		static bool triangle2 = false;
-		if (triangle2 == false)
-		{
-			triangle2 = true;
+	//if (m_FramesRendered > 500) //Adding new mesh after 500 frames
+	//{
+	//	static bool triangle2 = false;
+	//	if (triangle2 == false)
+	//	{
+	//		triangle2 = true;
 
-			Mesh* TriangleMesh = new Mesh();
-			TriangleMesh->Positions = {
-				{ -1.0f, 1, 0.0f }, //topmid
-				{ 1, -1, 0.0f }, //bottomright
-				{ -1, -1, 0.0f } //bottomleft
-			};
+	//		Mesh* TriangleMesh = new Mesh();
+	//		TriangleMesh->Positions = {
+	//			{ -1.0f, 1, 0.0f }, //topmid
+	//			{ 1, -1, 0.0f }, //bottomright
+	//			{ -1, -1, 0.0f } //bottomleft
+	//		};
 
-			TriangleMesh->Colors = {
-				 { 1.0f, 1.0f, 1.0f, 1.0f },
-				 { 0.0f, 1.0f, 0.0f, 1.0f },
-				 { 1.0f, 0.0f, 1.0f, 1.0f }
-			};
+	//		TriangleMesh->Colors = {
+	//			 { 1.0f, 1.0f, 1.0f, 1.0f },
+	//			 { 0.0f, 1.0f, 0.0f, 1.0f },
+	//			 { 1.0f, 0.0f, 1.0f, 1.0f }
+	//		};
 
-			TriangleMesh->BuildBufferAllocations();
-			Meshes.push_back(TriangleMesh);
+	//		TriangleMesh->BuildBufferAllocations();
+	//		Meshes.push_back(TriangleMesh);
 
-			auto& uploadManager = UploadManager::Get();
-			uploadManager.QueueMeshForUpload(Meshes.back());
-		}
-	}
+	//		auto& uploadManager = UploadManager::Get();
+	//		uploadManager.QueueMeshForUpload(Meshes.back());
+	//	}
+	//}
 }
 

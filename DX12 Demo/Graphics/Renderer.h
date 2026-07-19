@@ -17,6 +17,7 @@ private:
 	shared_ptr<CommandList> PopulateCommandList(Window* pWindow);
 	void GoToNextFrame();
 	Graphics m_Graphics;
+	ComPtr<ID3D12DescriptorHeap> m_SRVHeap;
 	ComPtr<ID3D12PipelineState> m_PipelineState;
 	ComPtr<ID3D12RootSignature> m_RootSignature;
 	CD3DX12_VIEWPORT m_ViewPort;
@@ -30,6 +31,7 @@ private:
 	UploadRingBuffer m_UploadRingBuffer;
 	PerObjectConstantBufferData m_PerObjectConstantBufferData{ .HasColoredVertices = FALSE };
 
-	std::vector<Mesh*> Meshes;
+	vector<Mesh*> Meshes;
+	Texture CheckerTexture;
 };
 

@@ -140,6 +140,8 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Graphics\Profiler.cpp" />
+    <ClCompile Include="Graphics\Texture.cpp" />
+    <ClCompile Include="Graphics\UploadManager.cpp" />
     <ClCompile Include="Graphics\UploadRingBuffer.cpp" />
     <ClCompile Include="IO\DirectoryHelper.cpp" />
     <ClCompile Include="Common\Timer.cpp">
@@ -173,6 +175,7 @@
     <ClInclude Include="Graphics\ConstantBufferAllocation.h" />
     <ClInclude Include="Graphics\ConstantBufferTypes.h" />
     <ClInclude Include="Graphics\Profiler.h" />
+    <ClInclude Include="Graphics\Texture.h" />
     <ClInclude Include="Graphics\UploadManager.h" />
     <ClInclude Include="Graphics\UploadRingBuffer.h" />
     <ClInclude Include="IO\DirectoryHelper.h" />

@@ -25,6 +25,14 @@ void Mesh::BuildBufferAllocations() //This should onl be called once per mesh, a
         ColorBufferView.StrideInBytes = sizeof(Colors[0]);
         ColorBufferView.SizeInBytes = ByteSize(Colors);
     }
+    if (TexCoords.size() > 0)
+    {
+        TexCoordsBufferAllocation = allocator->Allocate(ByteSize(TexCoords), 4);
+        TexCoordBufferView.BufferLocation = base + TexCoordsBufferAllocation.Offset;
+        TexCoordBufferView.StrideInBytes = sizeof(TexCoords[0]);
+        TexCoordBufferView.SizeInBytes = ByteSize(TexCoords);
+    }
+
     IsGPUDataAllocated = true;
 }
  

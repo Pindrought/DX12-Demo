@@ -9,12 +9,15 @@ public:
 
 	vector<XMFLOAT3> Positions;
 	vector<XMFLOAT4> Colors;
+	vector<XMFLOAT2> TexCoords;
 
 	BufferAllocation PositionsBufferAllocation;
 	BufferAllocation ColorsBufferAllocation;
+	BufferAllocation TexCoordsBufferAllocation;
 
 	D3D12_VERTEX_BUFFER_VIEW PositionBufferView;
 	D3D12_VERTEX_BUFFER_VIEW ColorBufferView;
+	D3D12_VERTEX_BUFFER_VIEW TexCoordBufferView;
 
 	bool IsGPUDataUploaded = false;
 	bool IsGPUDataAllocated = false;
