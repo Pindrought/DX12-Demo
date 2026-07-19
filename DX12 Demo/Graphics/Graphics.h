@@ -16,7 +16,7 @@ public:
 	static Graphics* GetInstance();
 	static CommandQueue* GetDirectCommandQueue();
 	static CommandQueue* GetTransferCommandQueue();
-
+	D3D12MA::Allocator* GetMemoryAllocator();
 	static ID3D12Device2* GetDevice();
 	static IDXGIFactory4* GetDXGIFactory();
 	static D3D_ROOT_SIGNATURE_VERSION GetHighestRootSignatureVersion();

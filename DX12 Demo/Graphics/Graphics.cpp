@@ -48,6 +48,11 @@ CommandQueue* Graphics::GetTransferCommandQueue()
 	return GetInstance()->m_TransferCommandQueue.get();
 }
 
+D3D12MA::Allocator* Graphics::GetMemoryAllocator()
+{
+	return GetInstance()->m_Allocator.Get();
+}
+
 ID3D12Device2* Graphics::GetDevice()
 {
 	return GetInstance()->m_Device.Get();
