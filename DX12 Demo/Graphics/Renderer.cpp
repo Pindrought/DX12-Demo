@@ -135,6 +135,36 @@ void Renderer::Present(Window* pWindow, u64 fenceValue)
 	}
 }
 
+vector<u8> GenerateGradientTexture(u32 width, u32 height)
+{
+	const u32 bytesPerPixel = 4; // RGBA
+	vector<u8> textureData(width * height * bytesPerPixel);
+	for (u32 y = 0; y < height; ++y)
+	{
+		for (u32 x = 0; x < width; ++x)
+		{
+			u32 index = (y * width + x) * bytesPerPixel;
+			float r = 255.0f * (y / (float)height);
+			float b = 255.0f - (fabs(x - width / 2.0f) * 255 / (width / 2.0f));
+			textureData[index + 0] = r; // R
+			textureData[index + 1] = 0; // G
+			textureData[index + 2] = b; // B
+			textureData[index + 3] = 255; // A
+
+			int midpoint = height/2;
+			if (fabs(midpoint - y) < 5)
+			{
+				textureData[index + 0] = 255; // R
+				textureData[index + 1] = 255; // G
+				textureData[index + 2] = 255; // B
+				textureData[index + 3] = 255; // A
+			}
+
+		}
+	}
+	return textureData;
+}
+
 vector<u8> GenerateCheckerTexture(u32 width, u32 height)
 {
 	const u32 bytesPerPixel = 4; // RGBA
@@ -175,10 +205,11 @@ void Renderer::InitializeAssets()
 	{
 		// Describe and create a shader resource view (SRV) heap for the texture.
 		D3D12_DESCRIPTOR_HEAP_DESC srvHeapDesc = {};
-		srvHeapDesc.NumDescriptors = 1;
+		srvHeapDesc.NumDescriptors = 4096;
 		srvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
 		srvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 		ThrowIfFailed(pDevice->CreateDescriptorHeap(&srvHeapDesc, IID_PPV_ARGS(&m_SRVHeap)));
+		m_SRVHeapDescriptorSize = pDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 	}
 
 	// Create an empty root signature.
@@ -198,7 +229,9 @@ void Renderer::InitializeAssets()
 
 		//For texture
 		// Texture descriptor table at register t0
-		CD3DX12_DESCRIPTOR_RANGE1 textureRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 0); // 1 SRV at t0
+		CD3DX12_DESCRIPTOR_RANGE1 textureRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 
+											   UINT_MAX, //unbounded
+											   0); // 1 SRV at t0
 		rootParameters[1].InitAsDescriptorTable(1, &textureRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
 		CD3DX12_STATIC_SAMPLER_DESC linearRepeatSampler(0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR);
@@ -304,9 +337,35 @@ void Renderer::InitializeAssets()
 		srvDesc.Format = CheckerTexture.Format;
 		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
 		srvDesc.Texture2D.MipLevels = 1;
+
+		auto handlestart = m_SRVHeap->GetCPUDescriptorHandleForHeapStart();
+		CD3DX12_CPU_DESCRIPTOR_HANDLE handle1(m_SRVHeap->GetCPUDescriptorHandleForHeapStart(),
+											 0,
+											 m_SRVHeapDescriptorSize);
 		pDevice->CreateShaderResourceView(CheckerTexture.Resource.Get(), 
 										  &srvDesc, 
-										  m_SRVHeap->GetCPUDescriptorHandleForHeapStart());
+										  handle1);
+
+
+		vector<u8> gradientData = GenerateGradientTexture(64, 64);
+		GradientTexture.Initialize(gradientData, 64, 64, DXGI_FORMAT_R8G8B8A8_UNORM);
+
+		uploadManager.QueueTextureForUpload(&GradientTexture);
+
+		srvDesc = {};
+		srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		srvDesc.Format = CheckerTexture.Format;
+		srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		srvDesc.Texture2D.MipLevels = 1;
+
+		CD3DX12_CPU_DESCRIPTOR_HANDLE handle(m_SRVHeap->GetCPUDescriptorHandleForHeapStart(),
+											0,
+											m_SRVHeapDescriptorSize);
+
+		handle.ptr += m_SRVHeapDescriptorSize;
+		pDevice->CreateShaderResourceView(GradientTexture.Resource.Get(),
+										  &srvDesc,
+										  handle);
 
 	}
 }
@@ -396,6 +455,19 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 		else
 		{
 			m_PerObjectConstantBufferData.HasTexCoords = TRUE;
+		}
+	}
+
+	if (GetAsyncKeyState(VK_F3))
+	{
+		while (GetAsyncKeyState(VK_F3)) { Sleep(1); }
+		if (m_PerObjectConstantBufferData.TextureId == 0)
+		{
+			m_PerObjectConstantBufferData.TextureId = 1;
+		}
+		else
+		{
+			m_PerObjectConstantBufferData.TextureId = 0;
 		}
 	}
 

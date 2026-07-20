@@ -2,6 +2,7 @@ struct PerObjectData
 {
 	bool HasColoredVertices;
 	bool HasTexCoords;
+	uint TextureId;
 };
 
 cbuffer _PerObjectDataCB : register(b0, space0)
@@ -9,7 +10,7 @@ cbuffer _PerObjectDataCB : register(b0, space0)
 	PerObjectData PerObjectDataCB;
 };
 
-Texture2D g_texture : register(t0);
+Texture2D Textures[] : register(t0);
 SamplerState g_sampler : register(s0);
 
 struct PSInput
@@ -23,7 +24,7 @@ float4 main(PSInput input) : SV_TARGET
 {
 	if (PerObjectDataCB.HasTexCoords == true)
 	{
-		return g_texture.Sample(g_sampler, input.texCoord);
+		return Textures[PerObjectDataCB.TextureId].Sample(g_sampler, input.texCoord);
 	}
 	else
 	{
