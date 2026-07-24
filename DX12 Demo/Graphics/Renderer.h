@@ -5,6 +5,16 @@
 #include "UploadManager.h"
 #include "ConstantBufferTypes.h"
 #include "UploadRingBuffer.h"
+#include "Camera.h"
+#include "Entity.h"
+
+enum RootParameterSlots
+{
+	RPSLOT_CBUFFER_PER_PASS,
+	RPSLOT_CBUFFER_PER_DRAW,
+	RPSLOT_SRV,
+	RPSLOT_COUNT
+};
 
 class Renderer
 {
@@ -30,9 +40,13 @@ private:
 	u64 m_FramesRendered = 0;
 	//Mesh TriangleMesh;
 	UploadRingBuffer m_UploadRingBuffer;
+
+	PerPassConstantBufferData m_PerPassConstantBufferData{ };
 	PerObjectConstantBufferData m_PerObjectConstantBufferData{ .HasColoredVertices = FALSE };
 
 	vector<Mesh*> Meshes;
+	Camera m_Camera;
+	Entity m_Entity;
 	Texture CheckerTexture;
 	Texture GradientTexture;
 };

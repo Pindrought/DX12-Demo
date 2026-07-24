@@ -1,11 +1,12 @@
 struct PerObjectData
 {
+	row_major float4x4 WorldMatrix;
 	bool HasColoredVertices;
 	bool HasTexCoords;
 	uint TextureId;
 };
 
-cbuffer _PerObjectDataCB : register(b0, space0)
+cbuffer _PerObjectDataCB : register(b1, space0)
 {
 	PerObjectData PerObjectDataCB;
 };

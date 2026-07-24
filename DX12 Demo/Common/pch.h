@@ -46,6 +46,10 @@ using std::weak_ptr;
 
 using namespace DirectX;
 
+#include <SimpleMath.h>
+
+using namespace SimpleMath;
+
 inline std::string HrToString(HRESULT hr)
 {
     char s_str[64] = {};

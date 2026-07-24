@@ -30,6 +30,9 @@ bool Renderer::Initialize()
 								  600.0f);
 	m_ScissorRect = CD3DX12_RECT(0, 0, 800, 600);
 
+	m_Camera.InitializePerspectiveRH(4.0f/3.0f, 0.01f, 100.0f);
+	m_Camera.SetTranslation({ 0, 0, 5 });
+
 	InitializeAssets();
 
 	s_Instance = this;
@@ -221,18 +224,23 @@ void Renderer::InitializeAssets()
 														D3D12_ROOT_SIGNATURE_FLAG_DENY_GEOMETRY_SHADER_ROOT_ACCESS;
 
 
-		CD3DX12_ROOT_PARAMETER1 rootParameters[2];
-		rootParameters[0].InitAsConstantBufferView(0, //Register b0
+		CD3DX12_ROOT_PARAMETER1 rootParameters[RootParameterSlots::RPSLOT_COUNT];
+		rootParameters[RootParameterSlots::RPSLOT_CBUFFER_PER_PASS].InitAsConstantBufferView(0, //Register b0
 												   0, //Space    space0
 												   D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
-												   D3D12_SHADER_VISIBILITY_PIXEL);
+												   D3D12_SHADER_VISIBILITY_VERTEX);
+
+		rootParameters[RootParameterSlots::RPSLOT_CBUFFER_PER_DRAW].InitAsConstantBufferView(1, //Register b1
+												   0, //Space    space0
+												   D3D12_ROOT_DESCRIPTOR_FLAG_NONE,
+												   D3D12_SHADER_VISIBILITY_ALL);
 
 		//For texture
 		// Texture descriptor table at register t0
 		CD3DX12_DESCRIPTOR_RANGE1 textureRange(D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 
 											   UINT_MAX, //unbounded
 											   0); // 1 SRV at t0
-		rootParameters[1].InitAsDescriptorTable(1, &textureRange, D3D12_SHADER_VISIBILITY_PIXEL);
+		rootParameters[RootParameterSlots::RPSLOT_SRV].InitAsDescriptorTable(1, &textureRange, D3D12_SHADER_VISIBILITY_PIXEL);
 
 		CD3DX12_STATIC_SAMPLER_DESC linearRepeatSampler(0, D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR);
 		CD3DX12_STATIC_SAMPLER_DESC anisotropicSampler(0, D3D12_FILTER_ANISOTROPIC);
@@ -388,19 +396,14 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 
 	ID3D12DescriptorHeap* ppHeaps[] = { m_SRVHeap.Get() };
 	cmdListd3d->SetDescriptorHeaps(_countof(ppHeaps), ppHeaps);
-	cmdListd3d->SetGraphicsRootDescriptorTable(1, m_SRVHeap->GetGPUDescriptorHandleForHeapStart());
+	cmdListd3d->SetGraphicsRootDescriptorTable(RootParameterSlots::RPSLOT_SRV, 
+											   m_SRVHeap->GetGPUDescriptorHandleForHeapStart());
 
 	cmdListd3d->RSSetViewports(1, &m_ViewPort);
 	cmdListd3d->RSSetScissorRects(1, &m_ScissorRect);
 
 	// Indicate that the back buffer will be used as a render target.
 	auto renderTarget = pWindow->m_RenderTargets[pWindow->GetBackBufferIndex()].Get();
-
-	/*auto barrier_present_to_rt = CD3DX12_RESOURCE_BARRIER::Transition(renderTarget,
-														D3D12_RESOURCE_STATE_PRESENT,
-														D3D12_RESOURCE_STATE_RENDER_TARGET);
-
-	cmdListd3d->ResourceBarrier(1, &barrier_present_to_rt);*/
 
 	{
 		D3D12_TEXTURE_BARRIER renderTargetBarrier = {};
@@ -471,10 +474,15 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 		}
 	}
 
-	ConstantBufferAllocation cBufferAlloc = m_UploadRingBuffer.Allocate(sizeof(m_PerObjectConstantBufferData));
-	cmdListd3d->SetGraphicsRootConstantBufferView(0,
-												  cBufferAlloc.GPUAddress);
-	memcpy(cBufferAlloc.CPUAddress, &m_PerObjectConstantBufferData, sizeof(m_PerObjectConstantBufferData));
+	m_PerPassConstantBufferData.CameraPosition = m_Camera.GetPosition();
+	m_PerPassConstantBufferData.View = m_Camera.GetViewMatrix();
+	m_PerPassConstantBufferData.Projection = m_Camera.GetProjectionMatrix();
+	m_PerPassConstantBufferData.ViewProjection = m_Camera.GetViewProjectionMatrix();
+
+	ConstantBufferAllocation cBufferAllocPerPass = m_UploadRingBuffer.Allocate(sizeof(m_PerPassConstantBufferData));
+	cmdListd3d->SetGraphicsRootConstantBufferView(RootParameterSlots::RPSLOT_CBUFFER_PER_PASS,
+												  cBufferAllocPerPass.GPUAddress);
+	memcpy(cBufferAllocPerPass.CPUAddress, &m_PerPassConstantBufferData, sizeof(m_PerPassConstantBufferData));
 
 	//Code to make background color pulse every second
 	float r = 1;
@@ -504,9 +512,24 @@ shared_ptr<CommandList> Renderer::PopulateCommandList(Window* pWindow)
 		};
 		cmdListd3d->IASetVertexBuffers(0, 3, bufferViews);
 
-		if (m_PerObjectConstantBufferData.HasTexCoords == TRUE)
+		float yaw = 0;
+		float pitch = 0;
+		static float roll = 1;
+		roll += 0.01f;
+		m_Entity.SetRotation(Quaternion::CreateFromYawPitchRoll({ yaw, pitch, roll }));
+		static float x = 0;
+		static float dx = -0.01;
+		if (x < -2 || x > 2)
 		{
+			dx = -dx;
 		}
+		x += dx;
+		m_Entity.SetTranslation({ x, 0, 0 });
+		m_PerObjectConstantBufferData.WorldMatrix = m_Entity.GetWorldMatrix();
+		ConstantBufferAllocation cBufferAlloc = m_UploadRingBuffer.Allocate(sizeof(m_PerObjectConstantBufferData));
+		cmdListd3d->SetGraphicsRootConstantBufferView(RootParameterSlots::RPSLOT_CBUFFER_PER_DRAW,
+													  cBufferAlloc.GPUAddress);
+		memcpy(cBufferAlloc.CPUAddress, &m_PerObjectConstantBufferData, sizeof(m_PerObjectConstantBufferData));
 
 		cmdListd3d->DrawInstanced(3, 1, 0, 0);
 	}
